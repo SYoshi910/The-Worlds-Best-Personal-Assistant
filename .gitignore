@@ -1,0 +1,10 @@
+# Secrets vault (CRITICAL - NEVER COMMIT)
+.env
+
+# Python sandbox environment
+.venv/
+venv/
+
+# Python background junk files
+__pycache__/
+*.pyc
