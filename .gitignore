@@ -8,3 +8,5 @@ venv/
 # Python background junk files
 __pycache__/
 *.pyc
+
+google_creds.json

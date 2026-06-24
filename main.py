@@ -1,37 +1,45 @@
+# main.py
 import uvicorn
 from fastapi import FastAPI
 from bot import build_bot
 import asyncio
-from contextlib import asynccontextmanager  # <-- 1. Import this helper tool
-#from webhooks import router as webhook_router
+from contextlib import asynccontextmanager 
 
-# 2. Define a unified Lifespan Manager
+from webhooks import router as webhook_router
+# 1. NEW: Import your auto-registration tool from webhooks
+from webhooks import auto_register_gcal_watch
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # [STARTUP ZONE] Everything before 'yield' runs when the server boots
+    # [STARTUP ZONE] Everything here runs automatically on boot
     bot_app = build_bot()
     
     await bot_app.initialize()
     asyncio.create_task(bot_app.start())
     asyncio.create_task(bot_app.updater.start_polling())
-    print("🚀 FastAPI server started & ARIA Bot is polling Telegram (Lifespan Mode)!")
+    print("FastAPI server started & ARIA Bot is polling Telegram (Lifespan Mode)!")
     
-    yield  # <-- THE SPLIT: The server stays paused here while your app runs live
+    # 2. NEW: Fire the Google API handshake right after the bot starts
+    auto_register_gcal_watch()
     
-    # [SHUTDOWN ZONE] Everything after 'yield' runs when you hit Ctrl+C
+    yield  # <-- The server stays paused here while your app runs live
+    
+    # [SHUTDOWN ZONE] Runs when you hit Ctrl+C
     await bot_app.updater.stop()
     await bot_app.stop()
     await bot_app.shutdown()
-    print("🛑 ARIA Bot and FastAPI server shut down cleanly via Lifespan.")
+    print("ARIA Bot and FastAPI server shut down cleanly via Lifespan.")
 
-# 3. Pass the lifespan instructions directly into your FastAPI engine
+# Inject the lifespan manager into FastAPI
 app = FastAPI(lifespan=lifespan)
 
-#app.include_router(webhook_router)
+# Plug in your webhook endpoints from webhooks.py
+app.include_router(webhook_router)
 
 @app.get("/")
 def read_root():
     return {"ARIA_status": "Running"}
 
 if __name__ == "__main__":
+    # Note: Keep Ngrok running on port 5000 to match this!
     uvicorn.run("main:app", host="127.0.0.1", port=5000, reload=True)
