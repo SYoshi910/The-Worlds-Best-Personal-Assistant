@@ -1,8 +1,10 @@
 import requests
 import difflib
+from datetime import datetime, timezone
 from config import RECLAIM_API_KEY
 
 BASE_URL = "https://api.app.reclaim.ai/api"
+now = datetime.now(timezone.utc)
 
 HEADERS = {
     "Authorization" : f"Bearer {RECLAIM_API_KEY}",
@@ -29,6 +31,37 @@ def get_all_tasks():
         print(f"❌ Error fetching tasks: {response.status_code} - {response.text}")
         return []
     
+def get_active_tasks():
+    active = [t for t in get_all_tasks() if t['status'] in ["IN_PROGRESS", "SCHEDULED"]]
+    return active
+    
+def get_all_events():
+    url = f"{BASE_URL}/events"
+    response = requests.get(url, headers=HEADERS)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"❌ Error fetching events: {response.status_code} - {response.text}")
+        return []
+    
+def get_active_events():
+    now = datetime.now(timezone.utc)
+    return [
+        e for e in get_all_events()
+        if datetime.fromisoformat(e['eventStart']) > now
+    ]
+    
+def get_next_event():
+    next_event = min(get_active_events(), key=lambda e: datetime.fromisoformat(e['eventStart']))
+    return next_event
+
+def get_event_time(event):
+    return event['eventStart']
+
+def upcoming_info():
+    return get_next_event()['title'], get_event_time(get_next_event())
+
 def find_task_by_name(query: str):
     tasks = get_all_tasks()
     if not tasks:
@@ -67,3 +100,4 @@ def extend_task(task_id: str, total_chunks_required: int):
         print(f"Error extending task {task_id}: {response.status_code} - {response.text}")
         return False
     
+print(get_next_event())

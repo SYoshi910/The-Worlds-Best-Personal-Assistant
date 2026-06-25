@@ -4,7 +4,6 @@ import uuid
 from fastapi import APIRouter, Header, Response
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from bot import task_start_notif
 
 # Import your custom configuration and functions
 from config import MY_CUSTOM_TOKEN
@@ -36,7 +35,7 @@ async def handle_gcal_notification(
     # The Action Trigger: A real calendar event was updated
     if x_goog_resource_state == "exists":
         print("🔄 Google Calendar sync event detected...")
-        task_start_notif()
+      #  task_start_notif()
         # Pull the fresh task schedule from Reclaim
         #next_task = check_next_upcoming_task()
         

@@ -1,7 +1,12 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_USER_ID, TELEGRAM_BOT_TOKEN
-import requests
+from reclaim import upcoming_info
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime
+
+scheduler = AsyncIOScheduler()
+
 
 async def start_command(update : Update, context : ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -32,19 +37,37 @@ def build_bot():
 
     return application
 
-def task_start_notif(task=None):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    message_text = 'You have an event starting now!'
+def schedule_ping(task_title: str, start_time: str):
+    fire_time = datetime.fromisoformat(start_time)
 
-    payload = {
-        "chat_id": TELEGRAM_USER_ID,
-        "text": message_text,
-        "parse_mode": "Markdown"
-    }
+    scheduler.add_job(
+        send_block_start,
+        trigger='date',
+        run_date=fire_time,
+        kwargs={'title' : task_title}
+    )
 
-    try:
-        requests.post(url, json=payload)
-        print("📲 Telegram notification sent successfully!")
-    except Exception as e:
-        print(f"❌ Failed to send Telegram message: {e}")
+async def send_block_start(title: str):
+    await bot_app.bot.send_message(
+        chat_id=TELEGRAM_USER_ID,
+        text=f'You have {title} scheduled for now. Do with that what you will'
+    )
+
+bot_app = build_bot()
+# def task_start_notif(task=None):
+#     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+#     message_text = 'You have an event starting now!'
+
+#     payload = {
+#         "chat_id": TELEGRAM_USER_ID,
+#         "text": message_text,
+#         "parse_mode": "Markdown"
+#     }
+
+#     try:
+#         requests.post(url, json=payload)
+#         print("📲 Telegram notification sent successfully!")
+#     except Exception as e:
+#         print(f"❌ Failed to send Telegram message: {e}")

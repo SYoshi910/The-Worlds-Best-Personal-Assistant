@@ -1,7 +1,8 @@
 # main.py
 import uvicorn
 from fastapi import FastAPI
-from bot import build_bot
+from bot import bot_app, schedule_ping, scheduler
+from reclaim import upcoming_info
 import asyncio
 from contextlib import asynccontextmanager 
 
@@ -12,7 +13,8 @@ from webhooks import auto_register_gcal_watch
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # [STARTUP ZONE] Everything here runs automatically on boot
-    bot_app = build_bot()
+    
+    scheduler.start()
     
     await bot_app.initialize()
     asyncio.create_task(bot_app.start())
@@ -21,6 +23,8 @@ async def lifespan(app: FastAPI):
     
     # 2. NEW: Fire the Google API handshake right after the bot starts
     auto_register_gcal_watch()
+    title, start_time = upcoming_info()
+    schedule_ping(title, start_time)
     
     yield  # <-- The server stays paused here while your app runs live
     
