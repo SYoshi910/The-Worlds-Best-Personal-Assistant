@@ -60,7 +60,8 @@ def get_event_time(event):
     return event['eventStart']
 
 def upcoming_info():
-    return get_next_event()['title'], get_event_time(get_next_event())
+    event = get_next_event()
+    return event['title'], get_event_time(event)
 
 def find_task_by_name(query: str):
     tasks = get_all_tasks()
@@ -100,4 +101,3 @@ def extend_task(task_id: str, total_chunks_required: int):
         print(f"Error extending task {task_id}: {response.status_code} - {response.text}")
         return False
     
-print(get_next_event())

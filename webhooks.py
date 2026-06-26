@@ -4,13 +4,17 @@ import uuid
 from fastapi import APIRouter, Header, Response
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from bot import prep_next_block
+import time
+import asyncio
 
-# Import your custom configuration and functions
+
 from config import MY_CUSTOM_TOKEN
-#from reclaim import check_next_upcoming_task
 
-# 1. Create a router instance (This acts as a plug-in for main.py)
 router = APIRouter()
+
+_last_webhook_time = 0
+DEBOUNCE_SECONDS = 2
 
 # 2. Define the Webhook Listener Route
 @router.post("/gcal-webhook")
@@ -18,6 +22,7 @@ async def handle_gcal_notification(
     x_goog_resource_state: str = Header(None),
     x_goog_channel_token: str = Header(None)
 ):
+    global _last_webhook_time
     """
     Listens for webhook pings from Google Calendar.
     Triggers a Reclaim API check whenever a calendar change occurs.
@@ -34,20 +39,18 @@ async def handle_gcal_notification(
 
     # The Action Trigger: A real calendar event was updated
     if x_goog_resource_state == "exists":
+        now = time.time()
+        if now - _last_webhook_time < DEBOUNCE_SECONDS:
+            return Response(status_code=200)  # silent drop
+        _last_webhook_time = now
         print("🔄 Google Calendar sync event detected...")
-      #  task_start_notif()
-        # Pull the fresh task schedule from Reclaim
-        #next_task = check_next_upcoming_task()
-        
-        #if next_task:
-         #   print(f"🎯 Next task on deck: {next_task.get('title')}")
-          #  # TODO: Add your Telegram bot alert function here later!
+        await asyncio.sleep(10.0)
+        prep_next_block()
 
-    # The Quick Receipt: Tell Google we received the message successfully
     return Response(status_code=200)
 
 
-# 3. Define the Automatic Registration Tool
+
 def auto_register_gcal_watch():
     """
     Automatically fetches the live local Ngrok URL and registers 
