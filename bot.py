@@ -67,7 +67,7 @@ async def send_block_start(title: str):
             try:
                 await bot_app.bot.send_message(
                     chat_id=TELEGRAM_USER_ID,
-                    text=f'You have {title} scheduled for now. Do with that what you will'
+                    text=f'You have {title} scheduled for now, lmk if that changed'
                 )
                 print('message sent')
                 break
