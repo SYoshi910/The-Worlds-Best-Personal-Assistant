@@ -34,7 +34,7 @@ async def handle_gcal_notification(
 
     # The Security Bouncer: Block unauthorized requests
     if x_goog_channel_token != MY_CUSTOM_TOKEN:
-        print("⚠️ Warning: Unauthorized webhook attempt blocked.")
+        print("Warning: Unauthorized webhook attempt blocked.")
         return Response(status_code=403, content="Unauthorized token")
 
     # The Action Trigger: A real calendar event was updated
@@ -62,7 +62,7 @@ def auto_register_gcal_watch():
         public_url = ngrok_api_response['tunnels'][0]['public_url']
         webhook_url = f"{public_url}/gcal-webhook"
     except Exception:
-        print("⚠️ Warning: Could not detect an active Ngrok tunnel on port 4040.")
+        print("Warning: Could not detect an active Ngrok tunnel on port 4040.")
         print("Make sure you ran 'ngrok http 5000' in a separate terminal before starting the app!")
         return
 
@@ -73,7 +73,7 @@ def auto_register_gcal_watch():
             scopes=['https://www.googleapis.com/auth/calendar.events.readonly']
         )
     except FileNotFoundError:
-        print("❌ Error: 'google_creds.json' missing from project root.")
+        print("Error: 'google_creds.json' missing from project root.")
         return
 
     # Build the Watch Request for Google
