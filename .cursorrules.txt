@@ -1,0 +1,46 @@
+# ARIA — Personal AI Chief of Staff
+
+## Project Overview
+ARIA is a Telegram bot that acts as Sumedh's personal AI chief of staff. It manages his calendar and tasks via Reclaim.ai, interprets natural language commands, and takes actions on his behalf.
+
+## Stack
+- **Runtime**: Python 3.14, FastAPI, Uvicorn
+- **Bot**: python-telegram-bot (async, polling mode)
+- **Scheduler**: APScheduler (AsyncIOScheduler)
+- **LLM**: Groq (llama-3.3-70b-versatile for reasoning, llama-3.1-8b-instant for fast tasks, whisper-large-v3-turbo for voice)
+- **Embeddings**: Google Gemini Embedding 2 (cosine similarity for task resolution)
+- **Calendar**: Reclaim.ai REST API + Google Calendar API (via service account)
+- **Webhooks**: Google Calendar push notifications via ngrok tunnel
+
+## File Structure
+- `main.py` — FastAPI app, lifespan startup/shutdown
+- `bot.py` — Telegram handlers (message_master, voice_master, send_block_start, schedule_ping)
+- `inference.py` — LLM calls (call_llm, transcribe_audio, parse_to_iso)
+- `system_prompts.py` — SYSTEM_PROMPT_CAL and other prompts
+- `cal_helper.py` — Task map, cosine similarity resolution (get_task_by_query), dispatch
+- `reclaim.py` — All Reclaim.ai and Google Calendar API calls
+- `webhooks.py` — /gcal-webhook endpoint, debounce logic, auto_register_gcal_watch
+- `config.py` — All API keys and constants
+
+## Key Patterns
+- Everything is async — never use sync Reclaim calls inside async handlers
+- LLM returns JSON with fields: audit, action_required, clarification_required, reply, calls
+- dispatch() in cal_helper.py resolves task_query → task_id via get_task_by_query() before calling Reclaim functions
+- Reclaim functions accept task_id (int), never task names directly
+- Dates passed as natural language (e.g. "next Tuesday evening") and converted to ISO 8601 via parse_to_iso() in inference.py
+- conversation_buffer in bot.py accumulates messages only during clarification loops, cleared after action taken
+- current_task dict tracks the active ping context for ARIA to reference
+
+## Coding Conventions
+- Print statements for all API successes/failures with ✅/❌ prefix
+- All Reclaim functions return True/False or the response JSON
+- Timeout/NetworkError retries on all Telegram send calls (3 attempts, exponential backoff)
+- Module-level globals for scheduler, bot_app, current_task, conversation_buffer
+
+## Active TODOs
+- Rollback feature: 20s buffer before dispatch fires, "cancel" intercept in message_master
+- Rebuild task map after write operations and on webhook fire
+- Verify log_work and extend_task_instance endpoints against Reclaim docs
+- OCI deployment with HTTPS (nginx + certbot or Cloudflare tunnel)
+- Voice messages: voice_master and transcribe_audio built, needs end-to-end testing
+- Researcher agent: Gemini orchestrator + Llama subagents + Tavily + Gmail output
