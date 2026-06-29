@@ -1,67 +1,45 @@
 from groq import AsyncGroq
 from config import GROQ_TOKEN
-from datetime import datetime, timezone
+from datetime import datetime
 import json
-from reclaim import active_tasks
+from reclaim import get_active_tasks
+import parsedatetime as pdt
+from zoneinfo import ZoneInfo
+from system_prompts import SYSTEM_PROMPT_CAL
 
 client = AsyncGroq(api_key=GROQ_TOKEN)
 
-SYSTEM_PROMPT = """You are ARIA, an AI chief of staff managing Sumedh's calendar and tasks via Reclaim.
+# Initialize the NLP calendar engine
+cal = pdt.Calendar()
 
-Current time: {now}
-Current task on calendar: {current_task_title} (started {current_task_start})
-Upcoming tasks: {upcoming_tasks}
 
-Before responding, reason through:
-1. What was scheduled and what has Sumedh actually been doing?
-2. Is any action required, or is this just an acknowledgment?
-3. If action is required, which functions are needed and in what order?
-4. Are there dependent calls (e.g. find a task before acting on it)?
-If Sumedh's request isn't clearly mappable to available functions, explain the specific issue you are seeing.
 
-Available functions:
-- log_work(task_id, start, end): log a completed work session (ISO 8601 timestamps)
-- reschedule_task(task_name, snooze_until): push a task to later, defaults to now
-- create_gcal_event(name, start, end): create a calendar event (breaks, commutes, anything non-task)
-- create_task(title, due_date, priority, min_chunk_size, max_chunk_size, time_needed): create a new Reclaim task
-- extend_task_instance(task_name, additional_minutes): extend the current block right now
-- extend_task_total(task_name, additional_chunks): add total time to a task (1 chunk = 15 min)
-- complete_task(task_name): mark a task as done
+def parse_to_iso(natural_date_str: str, base_date: datetime) -> str:
+    """Converts 'next tuesday' into '2026-06-30T17:00:00-07:00'"""
+    if not natural_date_str:
+        return None
+        
+    # Parse using parsedatetime, anchoring to our base_date
+    time_struct, parse_status = cal.parse(natural_date_str, sourceTime=base_date)
+    
+    # A parse_status > 0 means it successfully found a date/time
+    if parse_status > 0:
+        parsed = datetime(*time_struct[:6], tzinfo=ZoneInfo("America/Los_Angeles"))
+        return parsed.strftime('%Y-%m-%dT%H:%M:%S-07:00')
+        
+    return None
 
-Respond ONLY with a JSON object, no markdown, no backticks:
-{{
-    "reasoning": "brief explanation of what you inferred",
-    "action_required": true or false,
-    "reply": "short conversational message to send back to Sumedh",
-    "calls": [
-        {{
-            "function": "function_name",
-            "params": {{"param": "value"}},
-            "result_alias": "optional_alias"
-        }}
-    ]
-}}
-
-If no action is required, calls should be [].
-All timestamps must be ISO 8601 with timezone e.g. 2026-06-26T14:00:00-07:00."""
-
-async def call_llm(
-    messages: list,
-    model: str = "llama-3.1-8b-instant",
-    current_task: dict = None,
-    upcoming_events: list = None,
-) -> dict:
-    current_task = current_task or {}
-    upcoming_events = upcoming_events or []
-
-    formatted_prompt = SYSTEM_PROMPT.format(
-        now=datetime.now(timezone.utc).isoformat(),
-        current_task_title=current_task.get("title", "Nothing scheduled"),
-        current_task_start=current_task.get("start_time", "N/A"),
-        upcoming_tasks=", ".join([e["title"] for e in upcoming_events]) or "None",
+async def call_llm(message: list, model: str = "llama-3.3-70b-versatile") -> dict:
+    # 1. Generate a timezone-aware current time
+    current_time = datetime.now(ZoneInfo("America/Los_Angeles"))
+    
+    formatted_prompt = SYSTEM_PROMPT_CAL.format(
+        now=current_time.strftime("%A, %B %d, %Y at %I:%M %p %Z"),
+        weekday=current_time.strftime("%A"),
+        active_titles=[t["title"] for t in get_active_tasks()] 
     )
 
-    full_messages = [{"role": "system", "content": formatted_prompt}] + messages
+    full_messages = [{"role": "system", "content": formatted_prompt}] + message
 
     response = await client.chat.completions.create(
         model=model,
@@ -69,15 +47,50 @@ async def call_llm(
         max_tokens=1024,
         temperature=0.3,
     )
-
+    print(full_messages)
     raw = response.choices[0].message.content
+   
+    print(raw)
+    
 
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError:
-        # fallback if model adds backticks or preamble
         import re
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
-            return json.loads(match.group())
-        return {"action_required": False, "reply": raw, "calls": [], "reasoning": "parse failed"}
+            data = json.loads(match.group())
+        else:
+            return {"action_required": False, "reply": raw, "calls": [], "reasoning": "parse failed"}
+
+    # 2. Intercept and parse the dates before executing the tools
+    if data.get("action_required") and data.get("calls"):
+        for call in data["calls"]:
+            params = call.get("params", {})
+            
+            # Convert create_task relative dates
+            if call["function"] == "create_task" and "due_date_natural" in params:
+                old = params['due_date_natural']
+                params["due_date"] = parse_to_iso(params.pop("due_date_natural"), current_time)
+                print(f"due date changed from '{old}' to '{params['due_date']}'")
+                
+            # Convert create_event relative dates
+            elif call["function"] == "create_event":
+                if "start_time_natural" in params:
+                    old_start = params["start_time_natural"]
+                    params["start"] = parse_to_iso(params.pop("start_time_natural"), current_time)
+                    print(f"start time changed from '{old_start}' to '{params['start']}'")
+                if "end_time_natural" in params:
+                    old_end = params["end_time_natural"]
+                    params["end"] = parse_to_iso(params.pop("end_time_natural"), current_time)
+                    print(f"end time changed from '{old_end}' to '{params['end']}'")
+
+    return data
+
+async def transcribe_audio(audio_bytes: bytes) -> str:
+    transcription = await client.audio.transcriptions.create(
+        file=("voice.ogg", audio_bytes),
+        model="whisper-large-v3-turbo",
+    )
+    return transcription.text
+
