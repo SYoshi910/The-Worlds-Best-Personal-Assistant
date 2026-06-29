@@ -10,3 +10,5 @@ __pycache__/
 *.pyc
 
 google_creds.json
+
+.cursrorrules.txt
