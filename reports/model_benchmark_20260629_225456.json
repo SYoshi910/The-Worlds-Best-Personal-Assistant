@@ -1,0 +1,321 @@
+{
+  "run_at": "2026-06-29T22:56:27.661264",
+  "models": [
+    "qwen/qwen3-32b",
+    "llama-3.1-8b-instant"
+  ],
+  "case_count": 5,
+  "results": [
+    {
+      "case_id": "missed_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1891,
+        "completion_tokens": 112,
+        "total_tokens": 2003
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"ext",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": null,\n    \"reply\": \"Sure, baby. Let me push that BCG prep to tomorrow for you. Want me to adjust anything else?\",\n    \"calls\": [",
+      "error": null,
+      "latency_ms": 847,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "missed_bcg",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1883,
+        "completion_tokens": 133,
+        "total_tokens": 2016
+      },
+      "reply_preview": "{\n\n    \"action_required\": true,\n\n    \"clarification_required\": false,\n\n    \"clarification_kind\": null,\n\n    \"pending_params\": {},\n\n    \"missing_fields\": [],\n\n  ",
+      "raw_preview": "{\n\n    \"action_required\": true,\n\n    \"clarification_required\": false,\n\n    \"clarification_kind\": null,\n\n    \"pending_params\": {},\n\n    \"missing_fields\": [],\n\n    \"extend_scope\": {\n\n        \"chosen\": \"current_instance\",\n\n        \"confidence\": 0.85,\n\n        \"alternatives\": [\"task_total\", \"current_blo",
+      "error": null,
+      "latency_ms": 2598,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1921,
+        "completion_tokens": 112,
+        "total_tokens": 2033
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"ext",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": null,\n    \"reply\": \"Oh really? What have you been working on instead? If you'd like, I can switch the active task for you.\",\n   ",
+      "error": null,
+      "latency_ms": 11788,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1900,
+        "completion_tokens": 141,
+        "total_tokens": 2041
+      },
+      "reply_preview": "{\n\n\n\n    \"action_required\": true,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields",
+      "raw_preview": "{\n\n\n\n    \"action_required\": true,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields\": [],\n\n\n\n    \"extend_scope\": {\n\n\n\n        \"chosen\": \"current_instance\",\n\n\n\n        \"confidence\": 0.85,\n\n\n\n        \"alternatives\": [\"task_to",
+      "error": null,
+      "latency_ms": 8889,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      },
+      "reply_preview": "",
+      "raw_preview": "",
+      "error": "RATE_LIMIT: Error code: 429 - {'error': {'message': 'Rate limit reached for model `qwen/qwen3-32b` in organization `org_01kw1c92dee998a44jayr81pgq` service tier `on_demand` on tokens per minute (TPM): Limit 6000,",
+      "latency_ms": 12449,
+      "score": {
+        "format_ok": false,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": false,
+        "overall": false,
+        "reasons": [
+          "RATE_LIMIT: Error code: 429 - {'error': {'message': 'Rate limit reached for model `qwen/qwen3-32b` in organization `org_01kw1c92dee998a44jayr81pgq` service tier `on_demand` on tokens per minute (TPM): Limit 6000,"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1903,
+        "completion_tokens": 141,
+        "total_tokens": 2044
+      },
+      "reply_preview": "{\n\n    \"action_required\": true,\n\n    \"clarification_required\": false,\n\n    \"clarification_kind\": null,\n\n    \"pending_params\": {},\n\n    \"missing_fields\": [],\n\n  ",
+      "raw_preview": "{\n\n    \"action_required\": true,\n\n    \"clarification_required\": false,\n\n    \"clarification_kind\": null,\n\n    \"pending_params\": {},\n\n    \"missing_fields\": [],\n\n    \"extend_scope\": {\n\n        \"chosen\": \"current_instance\",\n\n        \"confidence\": 0.95,\n\n        \"alternatives\": [\"task_total\"]\n\n    },\n\n   ",
+      "error": null,
+      "latency_ms": 6943,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "create_startup_pitch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "add a task called startup pitch, 5 hrs, due friday",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1888,
+        "completion_tokens": 138,
+        "total_tokens": 2026
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"rep",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"reply\": \"Got it, I'll add your 'startup pitch' task with 5 hours of work needed, due by Friday.\",\n    \"calls\": [\n        {\n            \"functio",
+      "error": null,
+      "latency_ms": 5788,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "create_startup_pitch",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "add a task called startup pitch, 5 hrs, due friday",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1880,
+        "completion_tokens": 146,
+        "total_tokens": 2026
+      },
+      "reply_preview": "{\n\n\n\n    \"action_required\": true,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields",
+      "raw_preview": "{\n\n\n\n    \"action_required\": true,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields\": [],\n\n\n\n    \"extend_scope\": {},\n\n\n\n    \"reply\": \"You want to add a task called 'startup pitch' with 5 hours of work due on Friday. Is that",
+      "error": null,
+      "latency_ms": 10639,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "create_groceries",
+      "model": "qwen/qwen3-32b",
+      "prompt": "add task buy groceries tonight",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1880,
+        "completion_tokens": 134,
+        "total_tokens": 2014
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": true,\n    \"clarification_kind\": \"create_task\",\n    \"pending_params\": {\n        \"name\": \"buy groceri",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": true,\n    \"clarification_kind\": \"create_task\",\n    \"pending_params\": {\n        \"name\": \"buy groceries\",\n        \"start_time_natural\": null,\n        \"end_time_natural\": null\n    },\n    \"missing_fields\": [\"due_date_natural\", \"time_needed_nat",
+      "error": null,
+      "latency_ms": 6763,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "create_groceries",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "add task buy groceries tonight",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1872,
+        "completion_tokens": 145,
+        "total_tokens": 2017
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [\"title\", \"d",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [\"title\", \"due_date_natural\", \"time_needed_natural\", \"event_category\", \"priority\"],\n    \"extend_scope\": {},\n    \"reply\": \"What time do you plan to buy g",
+      "error": null,
+      "latency_ms": 10657,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected clarification_required=true"
+        ]
+      }
+    }
+  ],
+  "totals_by_model": {
+    "qwen/qwen3-32b": {
+      "passed": 0,
+      "total": 5,
+      "tokens": 8076
+    },
+    "llama-3.1-8b-instant": {
+      "passed": 0,
+      "total": 5,
+      "tokens": 10144
+    }
+  }
+}

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
+import schedule_cache
 from bot import bot_app, prep_next_block, scheduler
 from cal_helper import build_task_map
 from config import DEV_RELOAD
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     await register_gcal_watch()
     schedule_watch_renewal(scheduler)
     await build_task_map()
+    await schedule_cache.refresh()
     await prep_next_block()
 
     yield

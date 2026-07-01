@@ -2,13 +2,17 @@
 
 import asyncio
 import difflib
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import google.generativeai as genai
 import numpy as np
 
 import gcal
+import queries
 import reclaim
-from config import GEMINI_TOKEN
+import buffer_analysis
+from config import GEMINI_TOKEN, TIMEZONE
 
 genai.configure(api_key=GEMINI_TOKEN)
 
@@ -34,6 +38,11 @@ async def update_task(
     return await reclaim.update_task_fields(task_id, fields)
 
 
+async def move_due_date(task_id: int, due_date: str) -> bool:
+    """Move only a task's due date (spec 13c); due_date is a parsed ISO string."""
+    return await reclaim.update_task_fields(task_id, {"due": due_date})
+
+
 FUNCTION_MAP = {
     "log_work": reclaim.log_work,
     "reschedule_task": reclaim.reschedule_task,
@@ -43,9 +52,23 @@ FUNCTION_MAP = {
     "extend_task_instance": reclaim.extend_task_instance,
     "complete_task": reclaim.complete_task,
     "update_task": update_task,
+    "move_due_date": move_due_date,
+    "get_schedule_for_window": queries.get_schedule_for_window,
+    "get_break_allowance": buffer_analysis.get_break_allowance,
 }
 
+# Read-only functions never touch tasks/events and shouldn't be tracked as writes.
+READ_ONLY_FUNCTIONS = {"get_schedule_for_window", "get_break_allowance"}
+
 COMPOSITE_FUNCTIONS: set[str] = set()
+
+# Composites that resolve their own task reference internally; dispatch must NOT
+# convert their task_query/new_task_query into a task_id before calling them.
+COMPOSITE_INTERNAL_QUERY = {
+    "reschedule_missed_work",
+    "reschedule_multiple_missed_work",
+    "extend_current_gcal_block",
+}
 
 WRITE_FUNCTIONS = {
     "create_task",
@@ -54,10 +77,13 @@ WRITE_FUNCTIONS = {
     "extend_task_instance",
     "reschedule_task",
     "update_task",
+    "move_due_date",
     "log_work",
     "reschedule_missed_work",
+    "reschedule_multiple_missed_work",
     "switch_active_task",
-    "extend_current_block",
+    "resume_previous_task",
+    "extend_current_gcal_block",
 }
 
 TASK_MAP: dict[int, str] = {}
@@ -112,15 +138,19 @@ def _register_composites():
     COMPOSITE_FUNCTIONS.update(
         {
             "reschedule_missed_work",
+            "reschedule_multiple_missed_work",
             "switch_active_task",
-            "extend_current_block",
+            "resume_previous_task",
+            "extend_current_gcal_block",
         }
     )
     FUNCTION_MAP.update(
         {
             "reschedule_missed_work": composites.reschedule_missed_work,
+            "reschedule_multiple_missed_work": composites.reschedule_multiple_missed_work,
             "switch_active_task": composites.switch_active_task,
-            "extend_current_block": composites.extend_current_block,
+            "resume_previous_task": composites.resume_previous_task,
+            "extend_current_gcal_block": composites.extend_current_gcal_block,
         }
     )
 
@@ -133,28 +163,91 @@ def _normalize_query(query: str) -> str:
     return query
 
 
-def _human_summary(fn_name: str, task: dict | None, params: dict) -> str:
-    title = (task or {}).get("title", "task")
+def _fmt_clock(iso: str | None) -> str | None:
+    """Format an ISO datetime as a friendly local clock time (e.g. '12:00 PM')."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(ZoneInfo(TIMEZONE))
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def build_action_confirmation(
+    fn_name: str, params: dict, result=None, task: dict | None = None
+) -> str:
+    """First-person confirmation of a completed action (spec 21).
+
+    e.g. "I've created a lunch block from 12:00 PM until 12:30 PM". Replaces the
+    old terse ``_human_summary`` strings.
+    """
+    if fn_name == "get_schedule_for_window":
+        return str(result) if result else "Nothing scheduled in that window."
+    if fn_name == "get_break_allowance":
+        return str(result) if result else "Couldn't compute break allowance."
+
+    title = (task or {}).get("title") or params.get("title") or "that"
+
+    if fn_name == "create_event":
+        name = params.get("name", "block")
+        start = _fmt_clock(params.get("start"))
+        end = _fmt_clock(params.get("end"))
+        if start and end:
+            return f"I've created a {name} block from {start} until {end}"
+        if end:
+            return f"I've created a {name} block until {end}"
+        return f"I've created a {name} block"
     if fn_name == "reschedule_task":
-        return f"Rescheduled '{title}'"
+        return f"I've rescheduled '{title}'"
+    if fn_name == "move_due_date":
+        return f"I've moved the due date for '{title}'"
     if fn_name == "extend_task_total":
-        chunks = params.get("additional_chunks", 0)
-        return f"Added {chunks * 15} min to '{title}'"
+        mins = params.get("additional_chunks", 0) * 15
+        return f"I've added {mins} min to '{title}'"
     if fn_name == "extend_task_instance":
         mins = params.get("additional_minutes", 0)
-        return f"Added {mins} min ({reclaim.minutes_to_chunks(mins)} chunks) to '{title}'"
+        return f"I've added {mins} min to today's '{title}' block"
     if fn_name == "complete_task":
-        return f"Completed '{title}'"
+        return f"I've marked '{title}' complete"
     if fn_name == "create_task":
         cat = (params.get("event_category") or "WORK").lower()
-        return f"Created {cat} task '{params.get('title', title)}'"
+        return f"I've created the {cat} task '{params.get('title', title)}'"
     if fn_name == "update_task":
-        return f"Updated '{title}'"
-    if fn_name == "create_event":
-        return f"Created event '{params.get('name', 'block')}'"
+        return f"I've updated '{title}'"
     if fn_name == "log_work":
-        return f"Logged work on '{title}'"
-    return fn_name
+        return f"I've logged your work on '{title}'"
+    return f"Done: {fn_name}"
+
+
+def event_end_delta(
+    event_id: str, end_natural: str, now: datetime | None = None
+) -> int | None:
+    """Minutes to shift a task block's end so it ends at ``end_natural`` (spec 6).
+
+    Reads the block's current end from the warm ``schedule_cache`` and parses the
+    natural target time (e.g. "5pm"). Returns the signed minute delta between the
+    target and the current end, or ``None`` when the block is unknown or the
+    target time can't be parsed.
+    """
+    import schedule_cache
+    from inference import parse_to_iso
+
+    block = schedule_cache.get(event_id)
+    if not block:
+        return None
+    tz = ZoneInfo(TIMEZONE)
+    base = now or datetime.now(tz)
+    iso = parse_to_iso(end_natural, base)
+    if not iso:
+        return None
+    target = datetime.fromisoformat(iso)
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=tz)
+    current_end = block["end"]
+    return int(round((target - current_end).total_seconds() / 60))
 
 
 async def build_task_map(force_refresh: bool = False):
@@ -354,7 +447,7 @@ async def dispatch(
                 resolved_params[k] = v
 
         resolved_task = None
-        if "task_query" in resolved_params:
+        if "task_query" in resolved_params and fn_name not in COMPOSITE_INTERNAL_QUERY:
             task_query = resolved_params.pop("task_query")
             resolved_task = await get_task_by_query(
                 task_query,
@@ -399,7 +492,11 @@ async def dispatch(
             failed.append(f"{fn_name} did not succeed")
         else:
             succeeded.append(fn_name)
-            summaries.append(_human_summary(fn_name, resolved_task, resolved_params))
+            summaries.append(
+                build_action_confirmation(
+                    fn_name, resolved_params, result, resolved_task
+                )
+            )
             if fn_name == "create_event" and isinstance(result, dict) and result.get("id"):
                 snapshots.append(gcal.snapshot_from_gcal_event(result, "create"))
             if fn_name == "create_task" and isinstance(result, dict) and result.get("id"):

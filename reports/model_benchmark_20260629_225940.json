@@ -1,0 +1,345 @@
+{
+  "run_at": "2026-06-29T23:01:04.878239",
+  "models": [
+    "qwen/qwen3-32b",
+    "llama-3.1-8b-instant"
+  ],
+  "case_count": 5,
+  "results": [
+    {
+      "case_id": "missed_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [
+        "reschedule_missed_work"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1891,
+        "completion_tokens": 116,
+        "total_tokens": 2007
+      },
+      "reply_preview": "Aww, don't worry, babe. I'll take care of it. Let me reschedule your BCG prep for you.",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": null,\n    \"reply\": \"Aww, don't worry, babe. I'll take care of it. Let me reschedule your BCG prep for you.\",\n    \"calls\": [\n    ",
+      "error": null,
+      "latency_ms": 789,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "missed_bcg",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [
+        "reschedule_missed_work"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1883,
+        "completion_tokens": 134,
+        "total_tokens": 2017
+      },
+      "reply_preview": "Which BCG prep task are you referring to, and when would you like to reschedule it for?",
+      "raw_preview": "{\n\n    \"action_required\": true,\n\n    \"clarification_required\": false,\n\n    \"clarification_kind\": null,\n\n    \"pending_params\": {},\n\n    \"missing_fields\": [],\n\n    \"extend_scope\": {\n\n        \"chosen\": \"current_instance\",\n\n        \"confidence\": 0.85,\n\n        \"alternatives\": [\"task_total\"]\n\n    },\n\n   ",
+      "error": null,
+      "latency_ms": 504,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": "something else"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1921,
+        "completion_tokens": 127,
+        "total_tokens": 2048
+      },
+      "reply_preview": "Oh, really? What have you been working on instead? \ud83d\ude0f",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_block\",\n        \"confidence\": 0.95,\n        \"alternatives\": []\n    },\n    \"reply\": \"Oh, really? Wha",
+      "error": null,
+      "latency_ms": 438,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": false,
+        "overall": false,
+        "reasons": [
+          "should clarify but called ['switch_active_task']",
+          "placeholder switch_active_task.new_task_query='something else'"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": "what you're working on"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1900,
+        "completion_tokens": 135,
+        "total_tokens": 2035
+      },
+      "reply_preview": "Want to switch to what you're working on now?",
+      "raw_preview": "{\n\n\n\n    \"action_required\": true,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields\": [],\n\n\n\n    \"extend_scope\": {\n\n\n\n        \"chosen\": \"current_instance\",\n\n\n\n        \"confidence\": 0.85,\n\n\n\n        \"alternatives\": [\"task_to",
+      "error": null,
+      "latency_ms": 7613,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "should clarify but called ['switch_active_task']"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [
+        "extend_current_block"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep",
+          "additional_minutes": 30
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1925,
+        "completion_tokens": 158,
+        "total_tokens": 2083
+      },
+      "reply_preview": "Okay, Sumedh~ I'll extend your current BCG prep block by 30 minutes for you. Keep grinding, baby! \ud83d\udcaa",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_instance\",\n        \"confidence\": 0.95,\n        \"alternatives\": [\"task_total\"]\n    },\n    \"reply\": \"",
+      "error": null,
+      "latency_ms": 543,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [
+        "extend_task_instance"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep",
+          "additional_minutes": 30
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1903,
+        "completion_tokens": 138,
+        "total_tokens": 2041
+      },
+      "reply_preview": "You're going to wrap up BCG prep in a bit?",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_instance\",\n        \"confidence\": 0.95,\n        \"alternatives\": [\"task_total\"]\n    },\n    \"reply\": \"",
+      "error": null,
+      "latency_ms": 17816,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "create_groceries",
+      "model": "qwen/qwen3-32b",
+      "prompt": "add task buy groceries tonight",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": true,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1880,
+        "completion_tokens": 105,
+        "total_tokens": 1985
+      },
+      "reply_preview": "Sure, sweetie! How long will you need to do your grocery run? And is this a personal or work task?",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": true,\n    \"clarification_kind\": \"create_task\",\n    \"pending_params\": {\n        \"title\": \"buy groceries\",\n        \"due_date_natural\": \"tonight\"\n    },\n    \"missing_fields\": [\"time_needed_natural\", \"event_category\"],\n    \"reply\": \"Sure, swee",
+      "error": null,
+      "latency_ms": 569,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "create_groceries",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "add task buy groceries tonight",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      },
+      "reply_preview": "",
+      "raw_preview": "",
+      "error": "'NoneType' object has no attribute 'strip'",
+      "latency_ms": 14780,
+      "score": {
+        "format_ok": false,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": false,
+        "overall": false,
+        "reasons": [
+          "'NoneType' object has no attribute 'strip'"
+        ]
+      }
+    },
+    {
+      "case_id": "switch_orgo",
+      "model": "qwen/qwen3-32b",
+      "prompt": "doing orgo instead",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": "orgo"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1917,
+        "completion_tokens": 133,
+        "total_tokens": 2050
+      },
+      "reply_preview": "Switching to orgo now, babe! Let me push that BCG block aside for you~",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_block\",\n        \"confidence\": 0.85,\n        \"alternatives\": []\n    },\n    \"reply\": \"Switching to or",
+      "error": null,
+      "latency_ms": 582,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "switch_orgo",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "doing orgo instead",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1896,
+        "completion_tokens": 175,
+        "total_tokens": 2071
+      },
+      "reply_preview": "Switching to orgo homework. What's the new time estimate?",
+      "raw_preview": "{\n\n\n\n    \"action_required\": false,\n\n\n\n    \"clarification_required\": false,\n\n\n\n    \"clarification_kind\": null,\n\n\n\n    \"pending_params\": {},\n\n\n\n    \"missing_fields\": [],\n\n\n\n    \"extend_scope\": {\n\n\n\n        \"chosen\": \"current_instance\",\n\n\n\n        \"confidence\": 0.85,\n\n\n\n        \"alternatives\": [\"task_t",
+      "error": null,
+      "latency_ms": 14018,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected action_required with calls"
+        ]
+      }
+    }
+  ],
+  "totals_by_model": {
+    "qwen/qwen3-32b": {
+      "passed": 4,
+      "total": 5,
+      "tokens": 10173
+    },
+    "llama-3.1-8b-instant": {
+      "passed": 2,
+      "total": 5,
+      "tokens": 8164
+    }
+  }
+}

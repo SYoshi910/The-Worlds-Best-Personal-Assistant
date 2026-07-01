@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from config import RECLAIM_API_KEY, CALENDAR_ID, TIMEZONE
+from duration_parser import minutes_to_chunks
 import gcal
 
 BASE_URL = "https://api.app.reclaim.ai/api"
@@ -35,11 +36,6 @@ _tasks_cache_instances: list | None = None
 _tasks_cache_instances_at: float = 0
 _events_cache: list | None = None
 _events_cache_at: float = 0
-
-
-def minutes_to_chunks(minutes: int) -> int:
-    """Convert minutes to 15-min Reclaim chunks (rounds up, minimum 1)."""
-    return max(1, (minutes + 14) // 15)
 
 
 def invalidate_reclaim_cache() -> None:
@@ -233,6 +229,30 @@ async def find_missed_task_blocks(
     return sorted(blocks, key=lambda e: _parse_event_time(e["eventStart"]))
 
 
+async def task_ids_with_missed_blocks_today(
+    events: list[dict] | None = None,
+) -> list[int]:
+    """Distinct Reclaim task ids that have missed blocks today."""
+    day = datetime.now(ZoneInfo(TIMEZONE)).date()
+    now = datetime.now(timezone.utc)
+    if events is None:
+        events = await get_all_events()
+    ids: set[int] = set()
+    for event in events:
+        assist = event.get("assist") or {}
+        task_id = assist.get("taskId")
+        if not task_id:
+            continue
+        if not is_task_assignment(event):
+            continue
+        if not event_on_local_day(event, day):
+            continue
+        if not is_past_block(event, now):
+            continue
+        ids.add(task_id)
+    return sorted(ids)
+
+
 def enrich_event_context(event: dict, now: datetime | None = None) -> dict:
     if now is None:
         now = datetime.now(timezone.utc)
@@ -291,6 +311,69 @@ async def reschedule_task(task_id: int, snooze_until: str | None = None):
         print(f"✅ Rescheduled task {task_id} to {snooze_until}.")
         return True
     print(f"❌ Error rescheduling: {response.status_code} - {response.text}")
+    return False
+
+
+# Planner enum options keyed by whole-hour snooze amounts.
+_SNOOZE_OPTION_BY_HOURS = {1: "FROM_NOW_1H"}
+
+
+async def snooze_task(task_id: int, *, hours: int = 1) -> bool:
+    """Snooze a task off the current ping via the Reclaim planner.
+
+    Default 1-hour snooze uses the planner ``FROM_NOW_1H`` option (the verified
+    path for switch/resume step 1). Custom durations fall back to a ``snoozeUntil``
+    PATCH at now + ``hours``.
+    """
+    option = _SNOOZE_OPTION_BY_HOURS.get(hours)
+    if option:
+        url = f"{BASE_URL}/planner/task/{task_id}/snooze"
+        response = await _get_client().post(url, params={"snoozeOption": option})
+    else:
+        snooze_until = (
+            datetime.now(timezone.utc) + timedelta(hours=hours)
+        ).isoformat()
+        url = f"{BASE_URL}/tasks/{task_id}"
+        response = await _get_client().patch(url, json={"snoozeUntil": snooze_until})
+    if response.status_code in (200, 201, 204):
+        invalidate_reclaim_cache()
+        print(f"✅ Snoozed task {task_id} for {hours}h.")
+        return True
+    print(f"❌ Error snoozing task: {response.status_code} - {response.text}")
+    return False
+
+
+async def plan_work(
+    task_id: int, date_time: str, duration_minutes: int | None = None
+) -> bool:
+    """Schedule work on a task at a specific time via the planner (schedule-now).
+
+    Primary way to place what the user is actually working on after snoozing the
+    pinged task (switch/resume step 2). ``date_time`` is an ISO string;
+    ``duration_minutes`` optionally caps the planned block length.
+    """
+    url = f"{BASE_URL}/planner/plan-work/task/{task_id}"
+    params: dict = {"dateTime": date_time}
+    if duration_minutes is not None:
+        params["durationMinutes"] = int(duration_minutes)
+    response = await _get_client().post(url, params=params)
+    if response.status_code in (200, 201, 204):
+        invalidate_reclaim_cache()
+        print(f"✅ Planned work for task {task_id} at {date_time}.")
+        return True
+    print(f"❌ Error planning work: {response.status_code} - {response.text}")
+    return False
+
+
+async def start_task(task_id: int) -> bool:
+    """Start the work timer on a task via the planner (optional, after plan_work)."""
+    url = f"{BASE_URL}/planner/start/task/{task_id}"
+    response = await _get_client().post(url)
+    if response.status_code in (200, 201, 204):
+        invalidate_reclaim_cache()
+        print(f"✅ Started task {task_id}.")
+        return True
+    print(f"❌ Error starting task: {response.status_code} - {response.text}")
     return False
 
 

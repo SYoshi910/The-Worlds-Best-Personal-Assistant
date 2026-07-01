@@ -7,6 +7,7 @@ import uuid
 import httpx
 from fastapi import APIRouter, Header, Response
 
+import schedule_cache
 from bot import prep_next_block
 from cal_helper import build_task_map
 from config import CALENDAR_ID, MY_CUSTOM_TOKEN
@@ -105,5 +106,6 @@ async def handle_gcal_notification(
         await asyncio.sleep(10.0)
         await prep_next_block()
         await build_task_map()
+        await schedule_cache.refresh()
 
     return Response(status_code=200)

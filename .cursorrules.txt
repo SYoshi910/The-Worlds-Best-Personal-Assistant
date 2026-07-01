@@ -6,85 +6,194 @@
 
 ARIA is a Telegram bot that acts as Sumedh's personal AI chief of staff. It manages his calendar and tasks via Reclaim.ai, interprets natural language commands, and takes actions on his behalf.
 
+---
 
+# Part 1: ARIA Feature / Logic Map (Target Spec)
 
-## Stack
+## 1. Master flow
 
-- **Runtime**: Python 3.14, FastAPI, Uvicorn
+```mermaid
+flowchart TD
+    msg[User message] --> tier1{Tier-1 keyword?}
+    tier1 -->|undo| undoKw[Keyword undo rollback]
+    tier1 -->|snooze| snoozeKw[Snooze helper → reschedule_task]
+    tier1 -->|no| llm[LLM → JSON]
 
-- **Bot**: python-telegram-bot (async, polling mode)
+    llm --> intent{action_required?}
+    intent -->|false| replyOnly[Reply only, no buffer]
+    intent -->|true| missing{All params known?}
+    missing -->|no| clarifyLoop["clarification_required=true\nAsk ALL missing fields\nconversation_buffer ON\nwhile loop until complete"]
+    missing -->|yes| classify{Compound action?}
 
-- **Scheduler**: APScheduler (AsyncIOScheduler)
+    classify -->|yes| defer[Hold 30s deferred buffer]
+    classify -->|no| execNow[Execute immediately]
+    defer --> execNow2[Execute after buffer unless amended]
+    execNow --> dispatch[dispatch]
+    execNow2 --> dispatch
 
-- **LLM**: Groq (llama-3.3-70b-versatile for reasoning, whisper-large-v3-turbo for voice)
+    dispatch --> confirm[Append confirmation template]
+    confirm --> ledger[Store last action 30s for amend/undo]
+```
 
-- **Embeddings**: Google Gemini Embedding 2 (cosine similarity for task resolution)
+### Core rules (your G4 + clarification model)
 
-- **Calendar**: Reclaim.ai REST API (httpx async) + Google Calendar API (via service account)
+| State | `action_required` | `clarification_required` | `conversation_buffer` |
+|-------|-------------------|--------------------------|------------------------|
+| Vague / no intent (#7, #8) | `false` | `false` | OFF |
+| Wants action, missing params | `false` (until complete) | `true` | ON |
+| All params gathered | `true` | `false` | OFF (after execute) |
 
-- **Webhooks**: Google Calendar push notifications via ngrok tunnel (auto-renewed every 6 days)
+**Clarification loop:** like a `while not all_params_gathered()` — each turn asks for **every** still-missing field in one message; merge user reply; repeat until the LLM can emit a complete call.
 
+**Hardcoded keywords only:** `undo` (+ cancel variants), `snooze`. Everything else (including amend) = **LLM + last-action context**.
 
+---
 
-## File Structure
+## 2. Shared state
 
-- `main.py` — FastAPI app, lifespan startup/shutdown
+| Store | Shape | Refresh | Contents |
+|-------|-------|---------|----------|
+| **`week_event_cache`** | `dict[event_id → {title, start, end, task_id, …}]` + chronological index | **GCal webhook** | **Reclaim task blocks only** (not lunch/commute) |
+| **`current_task`** | ping context for active block | block-start ping | title, event_id, times, is_ongoing |
+| **`conversation_buffer`** | chat turns | append during clarify | only when clarification active |
+| **`last_action_ledger`** | fn + params + touched entities | on every execute | **30s TTL**, injected into system prompt for amend |
+| **`pending_deferred`** | queued compound calls | on classify | 30s hold before dispatch |
 
-- `bot.py` — Telegram handlers, scheduler pings, prep_next_block
+**“Last task”** = chronologically prior Reclaim task event in `week_event_cache` (same as “previous block” for ping scenarios).
 
-- `inference.py` — LLM calls, date/duration parsing, bool normalization, validation
+---
 
-- `system_prompts.py` — SYSTEM_PROMPT_CAL (task_query-based, no full task list)
+## 3. Tier-1 bypasses (no LLM)
 
-- `cal_helper.py` — Task map, cosine similarity resolution, async dispatch
+### `undo`
+- Keyword detector → rollback last action within **30s**
+- No LLM
 
-- `reclaim.py` — Async Reclaim.ai and Google Calendar API calls
+### `snooze`
+- Pattern: `"snooze {task} for {duration}"` OR `"snooze {task} until {time}"`
+- Dedicated **`parse_snooze_spec(message)`** helper:
+  - `for X hours` → relative from now
+  - `until Y` → absolute via existing time parser
+- Always → **`reschedule_task`** (Reclaim snooze, never missed-work move)
 
-- `gcal.py` — GCal get/move/delete/create with rollback snapshots
-- `intent.py` — Tier-1 substring + tier-2 difflib intent detection
-- `queries.py` — Per-turn read-only schedule snapshots (weekly, missed work)
-- `composites.py` — Multi-step ops: reschedule_missed_work, switch_active_task, extend_current_block, ping router
-- `rollback.py` — Action ledger, undo, and 5-minute amendment window
-- `webhooks.py` — /gcal-webhook endpoint, debounce, watch registration/renewal
+---
 
-- `config.py` — API keys and constants
-- `duration_parser.py` — natural-language duration → minutes/chunks
+## 4. LLM-callable functions
 
+### Primitives (simple → execute now, 30s undo)
 
+| Function | When | Key params |
+|----------|------|------------|
+| **`create_task`** | New task after disambiguation | title, due, duration, category WORK/PERSONAL |
+| **`create_event`** | Lunch, commute, evening busy block | name, start, end (natural) |
+| **`complete_task`** | User finished / wants off schedule | task_query |
+| **`extend_task_total`** | Whole-task budget | task_query, additional_time |
+| **`extend_task_instance`** | Reclaim task block extension | task_query, additional_time |
+| **`extend_current_gcal_block`** | Non-task GCal block (lunch/commute) | event_id or implicit current, end/until |
+| **`reschedule_task`** | Snooze (Tier-1 or LLM) | task_id, snooze_until |
+| **`move_due_date`** | **New** — move due only | task_query, due_date_natural |
+| **`update_task`** | Patch other fields | task_query, patches |
+| **`get_schedule_for_window`** | Read-only (#17) | day, period (morning/afternoon/…) |
 
-## Key Patterns
+### Composites (compound → **30s deferred buffer** before execute)
 
-- Be deterministic wherever possible, so long as outcomes are maximized in accuracy
+| Function | When | Notes |
+|----------|------|-------|
+| **`switch_active_task`** | User on a **different** task during ping | 1) Snooze pinged task **1 hour**; 2) **`plan_work(new, now, duration)`** |
+| **`resume_previous_task`** | Still on **previous** task, new ping fired | 1) Snooze pinged task **1 hour**; 2) **`plan_work(previous, now, duration)`** or `extend_task_instance` if extending same block |
+| **`reschedule_missed_work`** | Missed/skipped today’s work | Find today’s blocks from cache; default target **+1 hour from now**; clarify if multiple blocks |
 
-- Everything is async — Reclaim uses httpx AsyncClient; GCal sync calls use asyncio.to_thread
+**Ping mismatch rule:** not working on the pinged Reclaim task → **snooze it 1h** (`FROM_NOW_1H` / 4 chunks), then handle what user *is* doing. Do **not** GCal-bump the pinged block (auto-locks).
 
-- LLM returns JSON with fields: audit, action_required, clarification_required, reply, calls
+### Switch vs extend vs resume
 
-- LLM never sees the full task list — per-turn snapshots via queries.py for read questions; task_query for writes
+| Intent | Same as ping? | Action |
+|--------|---------------|--------|
+| Extend ("30 more min on this") | Yes | `extend_task_instance` or `extend_current_gcal_block` |
+| Switch ("doing orgo instead") | No | `switch_active_task` |
+| Resume ("still on last task") | Previous task | `resume_previous_task` |
 
-- current_task context is injected into the system prompt for ping follow-ups
+### Reclaim “start now” (tasks)
 
-- dispatch() resolves task_query → task_id via get_task_by_query() before calling Reclaim
-- Composites return {ok, summary, snapshots}; execute_calls() in rollback.py handles undo ledger
-- Ping responses (extend/switch) and missed_work route deterministically before LLM executes writes
-- Undo/cancel intercept runs before LLM; within 5 min, corrections amend in place via update_task (no auto-undo)
-- create_task requires eventCategory (WORK/PERSONAL); bot always asks work or personal before creating
-- Reclaim GET responses cached briefly (8s); invalidated on writes and GCal webhooks
+- **`startNow`** in swagger is **habits only** — not for task blocks.
+- **Tasks:** `POST /api/planner/plan-work/task/{id}?dateTime=now&durationMinutes=…` is the **primary** schedule-now path (switch/resume step 2). `POST /api/planner/start/task/{id}` is optional timer start. `reschedule_task` / snooze endpoints are for **snoozing away** the pinged task or explicit user snooze — not for “work on X now”.
 
-- Dates passed as natural language and converted to ISO 8601 via parse_to_iso()
-- Durations passed in *_natural fields and converted via duration_parser.py — LLM may also pass numeric chunks/minutes; inference normalizes before dispatch
+---
 
-- conversation_buffer accumulates messages only during clarification loops
+## 5. Helper functions (deterministic, not LLM)
 
-- Task map rebuilds after write operations and on webhook fire
+| Helper | Module (your spec: cal_helper) | Purpose |
+|--------|-------------------------------|---------|
+| **`resolve_task_query(query)`** | cal_helper | difflib → embedding fallback (≥0.75); returns task or None |
+| **`parse_duration(text, convert_to_chunks=False)`** | duration_parser / cal_helper | `"30 minutes"` → 30; `"until 5pm"` → minutes-from-now; optional chunk conversion |
+| **`event_end_delta(event_id, end_natural)`** | cal_helper | Read eventEnd from cache + parse target time → minutes/chunks delta (#6) |
+| **`parse_snooze_spec(message)`** | cal_helper or intent | Tier-1 snooze duration/_until parsing (#11) |
+| **`parse_upcoming_time(phrase, now)`** | inference/cal_helper | No am/pm → next occurrence (#18, #20): 11AM + "12:30" → PM; 11PM + "12:30" → AM |
+| **`find_task_blocks(task_query, day)`** | cal_helper | Today’s (or week’s) blocks for a task from cache (#9, #10) |
+| **`get_events_for_window(day, period)`** | queries/cal_helper | Overlap filter with your bands (#17); **includes all GCal events** |
+| **`compute_missing_fields(intent, partial)`** | clarification | Returns list of still-missing params for while-loop |
+| **`merge_clarification_reply(pending, message)`** | clarification | Merge user answer into partial_params |
+| **`classify_deferral(calls)`** | bot or new module | switch / extend_previous / multi-block reschedule → deferred; rest → immediate |
+| **`build_action_confirmation(fn, params, result)`** | cal_helper or dispatch | Template: `"I've created a lunch block from now until 12PM"` (#21) |
+| **`find_min_safe_break(...)`** | buffer_analysis | When unsafe, compute smallest safe break (#19b) |
 
+### Time-of-day bands (#17)
 
+| Period | Range |
+|--------|-------|
+| morning | 4:00 AM – 11:59 AM |
+| noon | 12:00 PM |
+| afternoon | 12:00 PM – 4:59 PM |
+| evening | 5:00 PM – 10:59 PM |
+| night | 11:00 PM – 3:59 AM |
 
-## Coding Conventions
+---
 
-- Print statements for all API successes/failures with ✅/❌ prefix
+## 6. Scenario logic map (condensed)
 
-- Timeout/NetworkError retries on all Telegram send calls (send_with_retry helper)
+| # | User says | Intent | Clarify rounds | Function(s) | Defer? |
+|---|-----------|--------|----------------|-------------|--------|
+| 1 | something else | switch | task + duration | switch_active_task | **Yes** |
+| 2 | doing orgo instead | switch | duration only if no until | resolve orgo → switch | **Yes** |
+| 3 | 30 more minutes (on ping) | extend current | none if clear | task→extend_task_instance; lunch→extend_current_gcal_block | No |
+| 4 | extend 75 mins | extend | which target + whole vs block | extend_* | No |
+| 5 | still on last task | resume previous | duration if missing | resume_previous_task (snooze ping 1h + extend previous) | **Yes** |
+| 6 | data infra until 5pm | branch | none if until given | same task→extend; different→switch (snooze+schedule) | switch=Yes |
+| 7–8 | yeah that changed / never mind | none | none | reply only | — |
+| 9 | didn't work on BCG | missed work | none if one block | reschedule_missed_work (+1hr default) | Maybe |
+| 10 | skipped BCG tomorrow AM | missed work | one vs all if multi | reschedule_missed_work | Maybe |
+| 11 | snooze BCG until thu | snooze | none | Tier-1 reschedule_task | No |
+| 12 | complete BCG | complete | none | complete_task | No |
+| 13 | add startup pitch… | create/disambig | category; maybe A vs new | create_task OR clarify extend+move_due | No |
+| 14 | personal (in flow) | create | none when complete | create_task | No |
+| 15 | make that due thu | amend | if last fn had no due field | update/move_due via LLM + ledger | No |
+| 16 | undo | undo | none | keyword rollback | No |
+| 16b | i meant orgo not BCG | amend | none | **JSON 1: undo → JSON 2: redo** | — |
+| 17 | tomorrow afternoon | read | none | get_schedule_for_window | No |
+| 18 | lunch 12:30–1:30 | event | none | create_event | No |
+| 19 | tired / clear evening | break | TBD / none for clear | break flow / create_event busy block → 10:59 PM | TBD |
+| 20 | commuting until noon | event | none | create_event now→noon | No |
+| 21 | bad task query | — | always clarify | never error | — |
+| 22 | wrong task recovery | amend | within 30s | undo + redo | — |
 
-- Module-level globals for scheduler, bot_app, current_task, conversation_buffer
+---
+
+## 7. Action tiers (G3)
+
+| Tier | Execute | Undo mechanism | Examples |
+|------|---------|----------------|----------|
+| **Simple** | Immediately | 30s ledger + rollback | complete, create_event, extend_instance, snooze, create_task, move_due_date |
+| **Compound** | **After 30s buffer** (user can amend in-window) | Prefer cancel/amend before fire; else rollback | switch_active_task, resume_previous_task, possibly multi-block reschedule |
+
+---
+
+## 8. Confirmation & amend
+
+- **Every successful action:** deterministic confirmation template (not left to LLM prose alone).
+- **Amend (30s):** exact last `{function, params}` in system prompt; LLM decides if new message amends it.
+- **Literal `undo`:** keyword, no LLM.
+- **Natural correction (`i meant X`):** two-step — rollback first JSON/turn, then redo with corrected params.
+- **Snapshots:** you want to revisit; spec leans on **ledger + 30s** rather than heavy pre-snapshotting for simple actions.
+
+---
 

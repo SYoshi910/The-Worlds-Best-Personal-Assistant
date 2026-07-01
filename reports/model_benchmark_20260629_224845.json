@@ -1,0 +1,200 @@
+{
+  "run_at": "2026-06-29T22:48:59.034376",
+  "models": [
+    "qwen/qwen3-32b",
+    "llama-3.3-70b-versatile"
+  ],
+  "case_count": 3,
+  "results": [
+    {
+      "case_id": "missed_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [
+        "reschedule_missed_work"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1891,
+        "completion_tokens": 109,
+        "total_tokens": 2000
+      },
+      "reply_preview": "Sure, let me reschedule your BCG prep for you, cutie.",
+      "raw_preview": "```json\n{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": null,\n    \"reply\": \"Sure, let me reschedule your BCG prep for you, cutie.\",\n    \"calls\": [\n        {\n            \"functi",
+      "error": null,
+      "latency_ms": 1089,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "missed_bcg",
+      "model": "llama-3.3-70b-versatile",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1883,
+        "completion_tokens": 103,
+        "total_tokens": 1986
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"rep",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"reply\": \"I've rescheduled your BCG prep for tomorrow. Let me know if you need any further changes!\",\n    \"calls\": [\n        {\n            \"func",
+      "error": null,
+      "latency_ms": 610,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1921,
+        "completion_tokens": 138,
+        "total_tokens": 2059
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"ext",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_block\",\n        \"confidence\": 0.95,\n        \"alternatives\": []\n    },\n    \"reply\": \"Ohhh really? Wh",
+      "error": null,
+      "latency_ms": 503,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "llama-3.3-70b-versatile",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1900,
+        "completion_tokens": 109,
+        "total_tokens": 2009
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"rep",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"reply\": \"You've switched to something else, so I'll pause the BCG prep for now. What's the new task you're working on?\",\n    \"calls\": [\n       ",
+      "error": null,
+      "latency_ms": 693,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1925,
+        "completion_tokens": 161,
+        "total_tokens": 2086
+      },
+      "reply_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"ext",
+      "raw_preview": "{\n    \"action_required\": true,\n    \"clarification_required\": false,\n    \"clarification_kind\": null,\n    \"pending_params\": {},\n    \"missing_fields\": [],\n    \"extend_scope\": {\n        \"chosen\": \"current_instance\",\n        \"confidence\": 0.95,\n        \"alternatives\": [\"task_total\"]\n    },\n    \"reply\": \"",
+      "error": null,
+      "latency_ms": 585,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "llama-3.3-70b-versatile",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      },
+      "reply_preview": "",
+      "raw_preview": "",
+      "error": "RATE_LIMIT: Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw1c92dee998a44jayr81pgq` service tier `on_demand` on tokens per day (TPD): Limit",
+      "latency_ms": 107,
+      "score": {
+        "format_ok": false,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": false,
+        "overall": false,
+        "reasons": [
+          "RATE_LIMIT: Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw1c92dee998a44jayr81pgq` service tier `on_demand` on tokens per day (TPD): Limit"
+        ]
+      }
+    }
+  ],
+  "totals_by_model": {
+    "qwen/qwen3-32b": {
+      "passed": 1,
+      "total": 3,
+      "tokens": 6145
+    },
+    "llama-3.3-70b-versatile": {
+      "passed": 0,
+      "total": 3,
+      "tokens": 3995
+    }
+  }
+}

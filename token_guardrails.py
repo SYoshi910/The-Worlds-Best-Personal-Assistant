@@ -62,25 +62,3 @@ def prepare_messages_for_llm(
     return trimmed
 
 
-def router_reply(intent: str, calls: list[dict]) -> str:
-    """Short user-facing reply for deterministic intent routing (no LLM)."""
-    if intent == "missed_work":
-        task = calls[0].get("params", {}).get("task_query", "that")
-        return f"Got it — I'll reschedule your missed blocks for {task}."
-    if intent == "extend_time":
-        minutes = calls[0].get("params", {}).get("additional_minutes")
-        if minutes:
-            return f"Adding {minutes} more minutes!"
-        return "Adding more time!"
-    if intent == "switch_task":
-        task = calls[0].get("params", {}).get("new_task_query", "the new task")
-        return f"Switching you to {task}."
-    if intent == "extend_task":
-        task = calls[0].get("params", {}).get("task_query", "that task")
-        chunks = calls[0].get("params", {}).get("additional_chunks")
-        if chunks:
-            return f"Adding {chunks * 15} min to {task}."
-        return f"Extending {task}."
-    if intent == "take_break":
-        return calls[0].get("_reply", "Checking your schedule for break time...")
-    return "On it!"

@@ -1,0 +1,207 @@
+{
+  "run_at": "2026-06-29T22:47:53.396974",
+  "models": [
+    "llama-3.1-8b-instant",
+    "qwen/qwen3-32b"
+  ],
+  "case_count": 3,
+  "results": [
+    {
+      "case_id": "missed_bcg",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [
+        "reschedule_missed_work"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1883,
+        "completion_tokens": 129,
+        "total_tokens": 2012
+      },
+      "reply_preview": "Which BCG prep task are you referring to?",
+      "error": null,
+      "latency_ms": 1134,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "missed_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1887,
+        "completion_tokens": 289,
+        "total_tokens": 2176
+      },
+      "reply_preview": "...",
+      "error": null,
+      "latency_ms": 886,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": ""
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1900,
+        "completion_tokens": 138,
+        "total_tokens": 2038
+      },
+      "reply_preview": "Switching to the new task. What's the title of the task you're working on now?",
+      "error": null,
+      "latency_ms": 596,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "should clarify but called ['switch_active_task']"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1917,
+        "completion_tokens": 512,
+        "total_tokens": 2429
+      },
+      "reply_preview": "<think>\nOkay, let's see. Sumedh says, \"hey ive been actually working on something else.\" I need to figure out the right action here.\n\nFirst, the current active ",
+      "error": null,
+      "latency_ms": 1456,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected clarification_required=true"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "llama-3.1-8b-instant",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [
+        "extend_task_instance"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep",
+          "additional_minutes": 30
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1903,
+        "completion_tokens": 143,
+        "total_tokens": 2046
+      },
+      "reply_preview": "You'll be working on BCG prep for 30 more minutes. Is that right?",
+      "error": null,
+      "latency_ms": 456,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1921,
+        "completion_tokens": 341,
+        "total_tokens": 2262
+      },
+      "reply_preview": "...",
+      "error": null,
+      "latency_ms": 10435,
+      "score": {
+        "format_ok": false,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "JSON/format invalid",
+          "expected action_required with calls"
+        ]
+      }
+    }
+  ],
+  "totals_by_model": {
+    "llama-3.1-8b-instant": {
+      "passed": 2,
+      "total": 3,
+      "tokens": 6096
+    },
+    "qwen/qwen3-32b": {
+      "passed": 0,
+      "total": 3,
+      "tokens": 6867
+    }
+  }
+}

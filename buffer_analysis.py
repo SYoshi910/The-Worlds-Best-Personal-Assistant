@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
@@ -334,6 +335,33 @@ async def load_schedule_state(
     )
 
 
+async def get_break_allowance() -> str:
+    """Read-only: how much break slack is available through the planning horizon."""
+    state = await load_schedule_state()
+    allowance = compute_allowance(state)
+    slack = format_hours(allowance.allowance_minutes)
+    booked = format_hours(allowance.scheduled_minutes)
+    schedulable = format_hours(allowance.schedulable_minutes)
+    work_left = format_hours(allowance.work_remaining_minutes)
+    return (
+        f"Break allowance (through {state.horizon_end.strftime('%A %b %d')}): "
+        f"~{slack} slack after required work ({work_left} work left, "
+        f"{booked} of {schedulable} schedulable time already booked)."
+    )
+
+
+_BREAK_ALLOWANCE_HINTS = re.compile(
+    r"\b(?:how long (?:of )?a break|break can i take|break allowance|"
+    r"how much break|time for a break)\b",
+    re.I,
+)
+
+
+def parse_break_allowance_request(message: str) -> bool:
+    """True when the user is asking a read-only break-capacity question."""
+    return bool(_BREAK_ALLOWANCE_HINTS.search(message or ""))
+
+
 def _format_risk_names(names: list[str]) -> str:
     if not names:
         return ""
@@ -452,11 +480,28 @@ async def assess_break_request(
     return assessment
 
 
+_NON_BREAK_EVENT_WORDS = (
+    "commute",
+    "commuting",
+    "lunch",
+    "dinner",
+    "drive",
+    "driving",
+    "travel",
+    "transit",
+    "appointment",
+    "meeting",
+    "class",
+)
+
+
 def is_break_like_event_call(call: dict) -> bool:
     if call.get("function") != "create_event":
         return False
     params = call.get("params") or {}
     name = (params.get("name") or "").lower()
+    if any(w in name for w in _NON_BREAK_EVENT_WORDS):
+        return False
     if any(w in name for w in ("break", "rest", "off", "tired", "relax")):
         return True
     start = params.get("start") or params.get("start_time_natural") or ""

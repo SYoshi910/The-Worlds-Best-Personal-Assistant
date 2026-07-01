@@ -8,9 +8,7 @@ from zoneinfo import ZoneInfo
 import gcal
 import reclaim
 from cal_helper import build_task_map, dispatch, get_task_by_query
-from config import TIMEZONE
-
-UNDO_WINDOW_MINUTES = 5
+from config import TIMEZONE, UNDO_WINDOW_SEC
 
 _last_completed: "CompletedAction | None" = None
 
@@ -63,12 +61,12 @@ async def build_amendment_context() -> str | None:
         return None
 
     remaining = action.expires_at - _now()
-    mins = max(0, int(remaining.total_seconds() / 60))
-    if mins <= 0:
+    secs = max(0, int(remaining.total_seconds()))
+    if secs <= 0:
         return None
 
     lines = [
-        f"Recent action (amendable for {mins} more minutes):",
+        f"Recent action (amendable for {secs} more seconds):",
         f"  User said: {action.user_message}",
         f"  Result: {action.summary}",
         "  Entities:",
@@ -170,6 +168,13 @@ async def _snapshot_before_call(
 
 
 async def _apply_snapshot(snap: dict) -> bool:
+    """Reverse one recorded snapshot.
+
+    Snapshots capture the pre-action state of each entity so a two-step "i meant
+    X" correction (undo the auto-run action, then run the alternate) and plain
+    undo both work within the 30s window. GCal snapshots are keyed by ``action``
+    (the forward op we're reversing); Reclaim snapshots by ``type``.
+    """
     action = snap.get("action")
     snap_type = snap.get("type")
 
@@ -181,14 +186,6 @@ async def _apply_snapshot(snap: dict) -> bool:
 
     if action == "create" and snap.get("event_id"):
         await gcal.delete_event(snap["event_id"])
-        return True
-
-    if action == "delete" and snap.get("event_id"):
-        await gcal.create_buffer_event(
-            snap.get("summary") or "Restored event",
-            snap["start"],
-            snap["end"],
-        )
         return True
 
     if snap_type == "reschedule_task":
@@ -273,7 +270,7 @@ async def execute_calls(
         _last_completed = CompletedAction(
             id=str(uuid.uuid4())[:8],
             created_at=now,
-            expires_at=now + timedelta(minutes=UNDO_WINDOW_MINUTES),
+            expires_at=now + timedelta(seconds=UNDO_WINDOW_SEC),
             user_message=user_message,
             calls_executed=calls,
             snapshots=all_snapshots,
@@ -281,7 +278,7 @@ async def execute_calls(
         )
         undo_hint = (
             f"\n\n(Say undo to reverse, or tell me what to change within "
-            f"{UNDO_WINDOW_MINUTES} min.)"
+            f"{UNDO_WINDOW_SEC} sec.)"
         )
 
     return {

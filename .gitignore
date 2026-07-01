@@ -11,4 +11,7 @@ __pycache__/
 
 google_creds.json
 
+data/bug_reports.jsonl
+data/model_usage.jsonl
+
 .cursrorrules.txt
