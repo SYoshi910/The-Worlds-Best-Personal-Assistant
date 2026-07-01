@@ -15,3 +15,5 @@ data/bug_reports.jsonl
 data/model_usage.jsonl
 
 .cursrorrules.txt
+
+system_prompts.py
