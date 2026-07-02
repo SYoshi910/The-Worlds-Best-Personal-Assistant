@@ -45,7 +45,7 @@ from inference import (
     parse_to_iso,
     transcribe_audio,
 )
-from model_router import AllModelsExhausted
+from model_router import AllModelsExhausted, note_user_activity
 from intent import (
     extract_break_window,
     is_break_confirmation,
@@ -132,7 +132,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id != TELEGRAM_USER_ID:
         print(f"Blocked unauthorized access attempt from User ID: {user_id}")
         return
-    await update.message.reply_text("ARIA is live...")
+    await update.message.reply_text("Kairo is live...")
 
 
 async def _post_break_at_risk_note() -> str:
@@ -547,6 +547,8 @@ async def message_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+    finally:
+        note_user_activity()
 
 
 async def _download_telegram_photo(update: Update) -> tuple[bytes, str, str]:
@@ -571,6 +573,7 @@ async def photo_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             label="photo during clarification reply",
         )
+        note_user_activity()
         return
     try:
         image_bytes, mime, caption = await _download_telegram_photo(update)
@@ -620,6 +623,8 @@ async def photo_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+    finally:
+        note_user_activity()
 
 
 async def voice_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -653,6 +658,8 @@ async def voice_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+    finally:
+        note_user_activity()
 
 
 def build_bot():
@@ -735,14 +742,15 @@ bot_app = build_bot()
 
 
 async def _notify_model_switch(from_name: str, to_name: str, reason: str) -> None:
-    text = f"Switching to {to_name} due to {reason} limit."
-    try:
+    print(f"Switching to {to_name} due to {reason} limit.")
+    #text = f"Switching to {to_name} due to {reason} limit."
+    """try:
         await send_with_retry(
             lambda: bot_app.bot.send_message(chat_id=TELEGRAM_USER_ID, text=text),
             label="model switch notice",
         )
     except Exception as e:
-        print(f"⚠️ model switch notice failed: {e}")
+        print(f"⚠️ model switch notice failed: {e}")"""
 
 
 from model_router import set_switch_notifier

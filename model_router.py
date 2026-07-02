@@ -27,6 +27,7 @@ from config import (
     GOOGLE_CHAT_MODEL,
     GOOGLE_VISION_MODEL,
     GROQ_TOKEN,
+    MODEL_CHAIN_IDLE_RESET_SEC,
     MODEL_QUOTA_THRESHOLD,
     MODEL_USAGE_PATH,
     TIMEZONE,
@@ -350,6 +351,7 @@ class UsageLedger:
             self.usage_day.clear()
             self.exhausted_day.clear()
             self.exhausted_until.clear()
+            self.active_model_id = ""
         if self.minute_key != minute:
             self.minute_key = minute
             self.usage_minute.clear()
@@ -448,14 +450,48 @@ class UsageLedger:
 
 
 _ledger = UsageLedger.load(Path(MODEL_USAGE_PATH))
+_last_user_activity_at: datetime | None = None
 
 
-def _chain_start_index() -> int:
-    if _ledger.active_model_id:
-        for i, spec in enumerate(MODEL_CHAIN):
-            if spec.id == _ledger.active_model_id:
-                return i
-    return 0
+def note_user_activity(now: datetime | None = None) -> None:
+    """Record that the user sent a message (resets model-chain idle timer)."""
+    global _last_user_activity_at
+    _last_user_activity_at = now or _la_now()
+
+
+def _seconds_since_user_activity(now: datetime | None = None) -> float | None:
+    if _last_user_activity_at is None:
+        return None
+    now = now or _la_now()
+    return (now - _last_user_activity_at).total_seconds()
+
+
+def _chain_start_index(now: datetime | None = None) -> int:
+    """Resume from sticky failover during active conversation.
+
+    After MODEL_CHAIN_IDLE_RESET_SEC without user messages, retry from the top
+    when higher-priority models are eligible again (TPM/RPM recovered; TPD/RPD
+    stay blocked until LA midnight).
+    """
+    if not _ledger.active_model_id:
+        return 0
+    active_idx = None
+    for i, spec in enumerate(MODEL_CHAIN):
+        if spec.id == _ledger.active_model_id:
+            active_idx = i
+            break
+    if active_idx is None:
+        return 0
+
+    now = now or _la_now()
+    idle_sec = _seconds_since_user_activity(now)
+    if idle_sec is not None and idle_sec < MODEL_CHAIN_IDLE_RESET_SEC:
+        return active_idx
+
+    for i in range(active_idx):
+        if not _ledger.is_exhausted(MODEL_CHAIN[i], now):
+            return 0
+    return active_idx
 
 
 async def _notify_switch(from_spec: ModelSpec | None, to_spec: ModelSpec, reason: str) -> None:
@@ -569,7 +605,7 @@ async def complete_chat(
     _ledger.rollover_if_needed(now)
     path = Path(MODEL_USAGE_PATH)
 
-    start = _chain_start_index()
+    start = _chain_start_index(now)
     ordered = MODEL_CHAIN[start:] + MODEL_CHAIN[:start]
 
     last_error = ""

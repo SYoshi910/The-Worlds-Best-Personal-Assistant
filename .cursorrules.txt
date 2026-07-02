@@ -1,14 +1,14 @@
-# ARIA — Personal AI Chief of Staff
+# Kairo — Personal AI Chief of Staff
 
 
 
 ## Project Overview
 
-ARIA is a Telegram bot that acts as Sumedh's personal AI chief of staff. It manages his calendar and tasks via Reclaim.ai, interprets natural language commands, and takes actions on his behalf.
+Kairo is a Telegram bot that acts as Sumedh's personal AI chief of staff. It manages his calendar and tasks via Reclaim.ai, interprets natural language commands, and takes actions on his behalf.
 
 ---
 
-# Part 1: ARIA Feature / Logic Map (Target Spec)
+# Part 1: Kairo Feature / Logic Map (Target Spec)
 
 ## 1. Master flow
 
@@ -119,23 +119,6 @@ flowchart TD
 - **Tasks:** `POST /api/planner/plan-work/task/{id}?dateTime=now&durationMinutes=…` is the **primary** schedule-now path (switch/resume step 2). `POST /api/planner/start/task/{id}` is optional timer start. `reschedule_task` / snooze endpoints are for **snoozing away** the pinged task or explicit user snooze — not for “work on X now”.
 
 ---
-
-## 5. Helper functions (deterministic, not LLM)
-
-| Helper | Module (your spec: cal_helper) | Purpose |
-|--------|-------------------------------|---------|
-| **`resolve_task_query(query)`** | cal_helper | difflib → embedding fallback (≥0.75); returns task or None |
-| **`parse_duration(text, convert_to_chunks=False)`** | duration_parser / cal_helper | `"30 minutes"` → 30; `"until 5pm"` → minutes-from-now; optional chunk conversion |
-| **`event_end_delta(event_id, end_natural)`** | cal_helper | Read eventEnd from cache + parse target time → minutes/chunks delta (#6) |
-| **`parse_snooze_spec(message)`** | cal_helper or intent | Tier-1 snooze duration/_until parsing (#11) |
-| **`parse_upcoming_time(phrase, now)`** | inference/cal_helper | No am/pm → next occurrence (#18, #20): 11AM + "12:30" → PM; 11PM + "12:30" → AM |
-| **`find_task_blocks(task_query, day)`** | cal_helper | Today’s (or week’s) blocks for a task from cache (#9, #10) |
-| **`get_events_for_window(day, period)`** | queries/cal_helper | Overlap filter with your bands (#17); **includes all GCal events** |
-| **`compute_missing_fields(intent, partial)`** | clarification | Returns list of still-missing params for while-loop |
-| **`merge_clarification_reply(pending, message)`** | clarification | Merge user answer into partial_params |
-| **`classify_deferral(calls)`** | bot or new module | switch / extend_previous / multi-block reschedule → deferred; rest → immediate |
-| **`build_action_confirmation(fn, params, result)`** | cal_helper or dispatch | Template: `"I've created a lunch block from now until 12PM"` (#21) |
-| **`find_min_safe_break(...)`** | buffer_analysis | When unsafe, compute smallest safe break (#19b) |
 
 ### Time-of-day bands (#17)
 

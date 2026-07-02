@@ -40,6 +40,10 @@ MAX_VOICE_DURATION_SEC = 30
 UNDO_WINDOW_SEC = 30
 DEFER_WINDOW_SEC = 30
 
+# After this many seconds without a user message, retry higher-priority LLM models
+# whose TPM/RPM limits have recovered (TPD/RPD stay exhausted until LA midnight).
+MODEL_CHAIN_IDLE_RESET_SEC = int(os.getenv("MODEL_CHAIN_IDLE_RESET_SEC", "180"))
+
 # Break permission / buffer analysis
 MIN_BUFFER_HOURS = 3
 TIGHT_BUFFER_HOURS = 1

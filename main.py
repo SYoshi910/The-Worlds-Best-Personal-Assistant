@@ -77,7 +77,7 @@ def _parent_pids() -> set[int]:
 def _lock_error(peers: set[int]) -> RuntimeError:
     peer_list = ", ".join(str(p) for p in sorted(peers)) if peers else "?"
     return RuntimeError(
-        f"Another ARIA instance is already running (PID {peer_list}). "
+        f"Another Kairo instance is already running (PID {peer_list}). "
         "Stop it before starting a second copy. "
         f"On Windows: Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
         "Where-Object { $_.CommandLine -like '*Project*main.py*' } | "
@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
         await bot_app.initialize()
         bot_task = asyncio.create_task(bot_app.start())
         poll_task = asyncio.create_task(bot_app.updater.start_polling())
-        print("FastAPI server started & ARIA Bot is polling Telegram (Lifespan Mode)!")
+        print("FastAPI server started & Kairo Bot is polling Telegram (Lifespan Mode)!")
 
         await register_gcal_watch()
         schedule_watch_renewal(scheduler)
@@ -174,7 +174,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
         _release_instance_lock()
-        print("ARIA Bot and FastAPI server shut down cleanly via Lifespan.")
+        print("Kairo Bot and FastAPI server shut down cleanly via Lifespan.")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -184,7 +184,7 @@ app.include_router(webhook_router)
 @app.get("/")
 def read_root():
     """Health check endpoint."""
-    return {"ARIA_status": "Running"}
+    return {"Kairo_status": "Running"}
 
 
 if __name__ == "__main__":

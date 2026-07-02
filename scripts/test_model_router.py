@@ -1,12 +1,12 @@
 """Unit tests for model_router quota ledger (no live API)."""
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import TIMEZONE
+from config import MODEL_CHAIN_IDLE_RESET_SEC, TIMEZONE
 from model_router import (
     MODEL_CHAIN,
     UsageLedger,
@@ -22,7 +22,11 @@ TZ = ZoneInfo(TIMEZONE)
 
 
 def test_ledger_rollover_clears_day_usage():
-    ledger = UsageLedger(la_date="2020-01-01", minute_key="2020-01-01T00:00")
+    ledger = UsageLedger(
+        la_date="2020-01-01",
+        minute_key="2020-01-01T00:00",
+        active_model_id="qwen/qwen3-32b",
+    )
     ledger.usage_day["llama-3.3-70b-versatile"] = ledger._day("llama-3.3-70b-versatile")
     ledger.usage_day["llama-3.3-70b-versatile"].tokens = 99_000
     ledger.exhausted_day.add("openai/gpt-oss-120b")
@@ -31,6 +35,70 @@ def test_ledger_rollover_clears_day_usage():
     assert ledger.la_date == "2026-07-01"
     assert ledger.usage_day == {}
     assert ledger.exhausted_day == set()
+    assert ledger.active_model_id == ""
+
+
+def test_chain_start_stays_sticky_during_active_conversation():
+    import model_router as mr
+
+    old_ledger = mr._ledger
+    old_activity = mr._last_user_activity_at
+    try:
+        now = datetime.now(TZ)
+        qwen_idx = next(i for i, s in enumerate(MODEL_CHAIN) if s.id == "qwen/qwen3-32b")
+        mr._ledger = UsageLedger(
+            la_date=now.date().isoformat(),
+            active_model_id="qwen/qwen3-32b",
+        )
+        mr._last_user_activity_at = now - timedelta(seconds=30)
+        assert mr._chain_start_index(now) == qwen_idx
+    finally:
+        mr._ledger = old_ledger
+        mr._last_user_activity_at = old_activity
+
+
+def test_chain_start_resets_after_idle_when_primary_available():
+    import model_router as mr
+
+    old_ledger = mr._ledger
+    old_activity = mr._last_user_activity_at
+    try:
+        now = datetime.now(TZ)
+        mr._ledger = UsageLedger(
+            la_date=now.date().isoformat(),
+            active_model_id="qwen/qwen3-32b",
+        )
+        mr._last_user_activity_at = now - timedelta(
+            seconds=MODEL_CHAIN_IDLE_RESET_SEC + 1
+        )
+        assert mr._chain_start_index(now) == 0
+    finally:
+        mr._ledger = old_ledger
+        mr._last_user_activity_at = old_activity
+
+
+def test_chain_start_stays_on_failover_while_all_higher_exhausted():
+    import model_router as mr
+
+    old_ledger = mr._ledger
+    old_activity = mr._last_user_activity_at
+    try:
+        now = datetime.now(TZ)
+        ledger = UsageLedger(
+            la_date=now.date().isoformat(),
+            active_model_id="qwen/qwen3-32b",
+        )
+        qwen_idx = next(i for i, s in enumerate(MODEL_CHAIN) if s.id == "qwen/qwen3-32b")
+        for i in range(qwen_idx):
+            ledger.mark_exhausted(MODEL_CHAIN[i], "daily token", now=now)
+        mr._ledger = ledger
+        mr._last_user_activity_at = now - timedelta(
+            seconds=MODEL_CHAIN_IDLE_RESET_SEC + 1
+        )
+        assert mr._chain_start_index(now) == qwen_idx
+    finally:
+        mr._ledger = old_ledger
+        mr._last_user_activity_at = old_activity
 
 
 def test_proactive_threshold_marks_daily_exhausted():
@@ -112,6 +180,9 @@ def test_google_system_instruction_json_suffix():
 
 if __name__ == "__main__":
     test_ledger_rollover_clears_day_usage()
+    test_chain_start_stays_sticky_during_active_conversation()
+    test_chain_start_resets_after_idle_when_primary_available()
+    test_chain_start_stays_on_failover_while_all_higher_exhausted()
     test_proactive_threshold_marks_daily_exhausted()
     test_parse_limit_reason()
     test_parse_retry_after()
