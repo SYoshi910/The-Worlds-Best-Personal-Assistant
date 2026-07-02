@@ -1,6 +1,6 @@
 VISION_EXTRACT_PROMPT = """You are extracting task-relevant text from a screenshot.
 Return concise plain text:
-- A short task title (one line)
+- A short task title (4-5 words at most)
 - Any deadlines, durations, or action items you see
 If there is no readable actionable text, respond with exactly: NO_TEXT_FOUND
 No markdown, no JSON."""
