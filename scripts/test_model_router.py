@@ -10,6 +10,9 @@ from config import TIMEZONE
 from model_router import (
     MODEL_CHAIN,
     UsageLedger,
+    _google_answer_text,
+    _google_contents,
+    _google_system_instruction,
     _parse_limit_reason,
     _parse_retry_after_seconds,
 )
@@ -51,9 +54,68 @@ def test_parse_retry_after():
     assert _parse_retry_after_seconds(err) == 9 * 60 + 26
 
 
+class _FakePart:
+    def __init__(self, text: str = "", *, thought: bool = False):
+        self.text = text
+        self.thought = thought
+
+
+class _FakeContent:
+    def __init__(self, parts):
+        self.parts = parts
+
+
+class _FakeCandidate:
+    def __init__(self, parts):
+        self.content = _FakeContent(parts)
+
+
+class _FakeResponse:
+    def __init__(self, candidates):
+        self.candidates = candidates
+
+
+def test_google_answer_text_skips_thought_parts():
+    response = _FakeResponse(
+        [
+            _FakeCandidate(
+                [
+                    _FakePart("internal reasoning", thought=True),
+                    _FakePart('{"reply": "ok", "calls": []}'),
+                ]
+            )
+        ]
+    )
+    assert _google_answer_text(response) == '{"reply": "ok", "calls": []}'
+
+
+def test_google_contents_maps_roles():
+    contents = _google_contents(
+        [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+    )
+    assert len(contents) == 2
+    assert contents[0].role == "user"
+    assert contents[0].parts[0].text == "hi"
+    assert contents[1].role == "model"
+    assert contents[1].parts[0].text == "hello"
+
+
+def test_google_system_instruction_json_suffix():
+    text = _google_system_instruction([{"role": "system", "content": "Be helpful."}])
+    assert "Be helpful." in text
+    assert "single JSON object only" in text
+
+
 if __name__ == "__main__":
     test_ledger_rollover_clears_day_usage()
     test_proactive_threshold_marks_daily_exhausted()
     test_parse_limit_reason()
     test_parse_retry_after()
+    test_google_answer_text_skips_thought_parts()
+    test_google_contents_maps_roles()
+    test_google_system_instruction_json_suffix()
     print("All model router tests passed.")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bug_log import append_bug_report
+from bug_log import BUG_STATUS_UNREVIEWED, append_bug_report
 from intent import is_bug_log_request, parse_bug_log_body
 
 
@@ -56,6 +56,7 @@ def test_append_bug_report_writes_jsonl(tmp_path):
     assert record["body"] == "test body"
     assert record["raw_message"] == "Log bug: test body"
     assert record["context"] == {"current_task_title": "BCG prep"}
+    assert record["status"] == BUG_STATUS_UNREVIEWED
     assert "logged_at" in record
 
 

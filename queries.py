@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from buffer_analysis import chunks_remaining, format_hours
 from config import TIME_OF_DAY_BANDS, TIMEZONE, WEEK_END_WEEKDAY
 from inference import parse_to_iso
 from reclaim import (
@@ -20,17 +21,51 @@ def format_snapshot_for_prompt(body: str) -> str:
     return f"Schedule snapshot (read-only, answer from this data only):\n{body}"
 
 
-def _chunks_remaining(task: dict) -> int:
-    required = task.get("timeChunksRequired") or 0
-    spent = task.get("timeChunksSpent") or 0
-    return max(0, required - spent)
+def format_clock(dt: datetime) -> str:
+    """Format a datetime as a friendly local clock time (e.g. '12:00 PM')."""
+    return dt.strftime("%I:%M %p").lstrip("0")
 
 
-def _format_chunks(chunks: int) -> str:
-    hours = chunks * 15 / 60
-    if hours == int(hours):
-        return f"{int(hours)}h"
-    return f"{hours:.1f}h"
+def _format_countdown(start: datetime, now: datetime) -> str:
+    secs = (start - now).total_seconds()
+    if secs <= 0:
+        return "now"
+    mins = int(secs // 60)
+    if mins < 60:
+        return f"{mins} min"
+    hrs, rem = divmod(mins, 60)
+    return f"{hrs}h {rem}m" if rem else f"{hrs}h"
+
+
+def _snapshot_status_lines(events: list, now: datetime, tz: ZoneInfo) -> list[str]:
+    """Active block and next-upcoming countdown (server-computed; LLM must not guess)."""
+    lines: list[str] = []
+    upcoming: list[tuple[datetime, datetime, str]] = []
+
+    for event in events:
+        title = event.get("title") or "block"
+        start = _parse_event_time(event["eventStart"])
+        end = _parse_event_time(event.get("eventEnd", event["eventStart"]))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        local_start = start.astimezone(tz)
+        local_end = end.astimezone(tz)
+        if local_start <= now < local_end:
+            lines.append(
+                f"Active task block: {title} until {format_clock(local_end)}"
+            )
+        elif local_start > now:
+            upcoming.append((local_start, local_end, title))
+
+    if upcoming:
+        local_start, _local_end, title = min(upcoming, key=lambda x: x[0])
+        lines.append(
+            f"Next task block: {title} at {format_clock(local_start)} "
+            f"({_format_countdown(local_start, now)} away)"
+        )
+    return lines
 
 
 async def build_weekly_snapshot() -> str:
@@ -66,16 +101,21 @@ async def build_weekly_snapshot() -> str:
 
     lines = [f"As of {now.strftime('%A %b %d %I:%M %p %Z')} — next 7 days:", ""]
 
+    status = _snapshot_status_lines(week_events, now, tz)
+    if status:
+        lines.extend(status)
+        lines.append("")
+
     lines.append("Tasks (due within 7 days):")
     if not week_tasks:
         lines.append("  (none)")
     else:
         for task in sorted(week_tasks, key=lambda t: t.get("due", "")):
-            remaining = _chunks_remaining(task)
+            remaining = chunks_remaining(task)
             due = task.get("due", "?")
             lines.append(
                 f"  - {task.get('title')} | due {due} | "
-                f"{_format_chunks(remaining)} left ({remaining} chunks)"
+                f"{format_hours(remaining * 15)} left ({remaining} chunks)"
             )
 
     lines.append("")
@@ -89,13 +129,6 @@ async def build_weekly_snapshot() -> str:
             )
 
     return format_snapshot_for_prompt("\n".join(lines))
-
-
-def format_schedule_reply(snapshot: str) -> str:
-    """User-facing weekly schedule from a read-only snapshot (no LLM)."""
-    prefix = "Schedule snapshot (read-only, answer from this data only):\n"
-    body = snapshot[len(prefix):] if snapshot.startswith(prefix) else snapshot
-    return f"Here's your week:\n\n{body.strip()}"
 
 
 # ─── Windowed read (spec 17) ───────────────────────────────────────────────────
@@ -238,10 +271,6 @@ def _window_bounds(
     return start, end, key
 
 
-def _fmt_time(dt: datetime) -> str:
-    return dt.strftime("%I:%M %p").lstrip("0")
-
-
 def _fmt_day_header(d: date) -> str:
     return d.strftime("%A %b %d")
 
@@ -258,7 +287,7 @@ def _format_window(
         return f"{header}\n  (nothing scheduled)"
     lines = [header]
     for start, end, title in hits:
-        lines.append(f"  - {title} | {_fmt_time(start)} to {_fmt_time(end)}")
+        lines.append(f"  - {title} | {format_clock(start)} to {format_clock(end)}")
     return "\n".join(lines)
 
 
@@ -288,7 +317,7 @@ def _format_full_week(
             lines.append("  (nothing scheduled)")
         else:
             for start, end, title in day_hits:
-                lines.append(f"  - {title} | {_fmt_time(start)} to {_fmt_time(end)}")
+                lines.append(f"  - {title} | {format_clock(start)} to {format_clock(end)}")
         day += timedelta(days=1)
     return "\n".join(lines)
 

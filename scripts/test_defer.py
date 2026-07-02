@@ -44,7 +44,6 @@ def test_classify_deferral_false_for_simple_functions():
         "create_task",
         "reschedule_task",
         "reschedule_missed_work",
-        "reschedule_multiple_missed_work",
         "move_due_date",
         "update_task",
         "log_work",

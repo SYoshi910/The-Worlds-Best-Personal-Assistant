@@ -22,9 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from clarification import (
     apply_llm_clarification_fields,
-    compute_create_task_missing,
+    compute_missing_fields,
     gate_task_queries,
-    map_scope_to_function,
 )
 from config import TIMEZONE
 from intent import (
@@ -228,29 +227,6 @@ async def _simulate_execute(calls: list[dict], current_task: dict | None = None)
         )
 
 
-def test_extend_scope_mapping():
-    """Extend scope is resolved via clarification, not confidence gating."""
-    call = map_scope_to_function(
-        "current_instance",
-        {"additional_time_natural": "30 minutes", "task_query": "BCG prep"},
-        MOCK_CURRENT_TASK,
-    )
-    ok = call["function"] == "extend_task_instance"
-    record(
-        ScenarioResult(
-            name="scenario_3_extend_30min",
-            prompt="hey ill be working on this for 30 more minutes",
-            category="pass" if ok else "fail",
-            finding=(
-                "map_scope_to_function routes to extend_task_instance"
-                if ok
-                else f"Unexpected function: {call.get('function')}"
-            ),
-            details={"call": call},
-        )
-    )
-
-
 async def test_gate_clarifies_vague_switch():
     """Task-query gate should clarify on placeholder queries (spec 21), not error."""
     bad_calls = [
@@ -406,7 +382,7 @@ def test_clarification_kinds_supported():
 
 def test_create_task_clarification_chain():
     partial = {"event_category": "PERSONAL"}
-    missing = compute_create_task_missing(partial)
+    missing = compute_missing_fields("create_task", partial)
     record(
         ScenarioResult(
             name="create_task_missing_duration",
@@ -566,7 +542,6 @@ async def main():
     test_fast_paths()
     test_read_schedule_not_tier1()
     test_snooze_parse()
-    test_extend_scope_mapping()
     test_clarification_kinds_supported()
     test_create_task_clarification_chain()
 

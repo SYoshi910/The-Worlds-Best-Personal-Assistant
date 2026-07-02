@@ -1,6 +1,7 @@
 import os
 import sys
-from datetime import time
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -15,11 +16,15 @@ GEMINI_TOKEN = os.getenv("GEMINI_TOKEN")
 
 CALENDAR_ID = os.getenv("CALENDAR_ID", "syoshi910@gmail.com")
 TIMEZONE = os.getenv("TIMEZONE", "America/Los_Angeles")
-DEV_RELOAD = os.getenv("DEV_RELOAD", "true").lower() == "true"
+DEV_RELOAD = os.getenv("DEV_RELOAD", "false").lower() == "true"
 BUG_LOG_PATH = os.getenv("BUG_LOG_PATH", "data/bug_reports.jsonl")
 MODEL_USAGE_PATH = os.getenv("MODEL_USAGE_PATH", "data/model_usage.jsonl")
 MODEL_QUOTA_THRESHOLD = float(os.getenv("MODEL_QUOTA_THRESHOLD", "0.95"))
-GOOGLE_CHAT_MODEL = os.getenv("GOOGLE_CHAT_MODEL", "gemma-3-27b-it")
+GOOGLE_CHAT_MODEL = os.getenv("GOOGLE_CHAT_MODEL", "gemma-4-31b-it")
+GOOGLE_VISION_MODEL = os.getenv("GOOGLE_VISION_MODEL", "gemma-4-26b-a4b-it")
+MAX_PHOTO_BYTES = int(os.getenv("MAX_PHOTO_BYTES", str(10 * 1024 * 1024)))
+EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "models/bge-m3")
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
 
 # Token / input guardrails
 LLM_MAX_OUTPUT_TOKENS = 512
@@ -27,7 +32,6 @@ LLM_MAX_INPUT_CHARS = 2000
 LLM_MAX_CHARS_PER_MESSAGE = 2000
 SNAPSHOT_MAX_CHARS = 4000
 MAX_CONVERSATION_TURNS = 8
-EXTEND_CORRECTION_WINDOW_SEC = 30
 CLARIFICATION_TTL_MINUTES = 10
 EXTEND_SCOPE_TTL_MINUTES = 5
 MAX_VOICE_DURATION_SEC = 30
@@ -73,3 +77,8 @@ if _MISSING:
     sys.exit(1)
 
 TELEGRAM_USER_ID = int(TELEGRAM_USER_ID)
+
+
+def now_local() -> datetime:
+    """Current time in the configured local timezone — the one shared clock helper."""
+    return datetime.now(ZoneInfo(TIMEZONE))

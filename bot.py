@@ -32,24 +32,35 @@ from clarification import (
 )
 from config import (
     DEFER_WINDOW_SEC,
+    MAX_PHOTO_BYTES,
     MAX_VOICE_DURATION_SEC,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_USER_ID,
     TIMEZONE,
 )
-from inference import call_llm, parse_upcoming_time, transcribe_audio
+from inference import (
+    ScreenshotNoTextError,
+    call_llm,
+    extract_screenshot_text,
+    parse_to_iso,
+    transcribe_audio,
+)
+from model_router import AllModelsExhausted
 from intent import (
     extract_break_window,
     is_break_confirmation,
     is_break_rejection,
     is_bug_log_request,
+    is_missed_work_request,
     is_snooze_request,
     is_take_break_request,
     is_undo_or_cancel,
     parse_bug_log_body,
+    parse_missed_work_spec,
     parse_snooze_spec,
 )
 from reclaim import (
+    _parse_event_time,
     enrich_event_context,
     get_all_tasks,
     get_next_event,
@@ -76,6 +87,7 @@ conversation_buffer: list = []
 pending_break: dict | None = None
 pending_clarification: PendingClarification | None = None
 pending_deferred: "PendingDeferred | None" = None
+pending_screenshot_text: str | None = None
 
 _prep_lock = asyncio.Lock()
 
@@ -232,12 +244,20 @@ async def _fire_deferred(pd: "PendingDeferred") -> None:
         print(f"❌ deferred action failed: {e}")
 
 
+async def _handle_missed_work(update: Update, incoming_text: str, spec: dict) -> None:
+    """Tier-1 missed work: reschedule via Reclaim planner (no LLM)."""
+    call = {"function": "reschedule_missed_work", "params": spec}
+    await _execute_and_reply(
+        update, [call], incoming_text, "On it — rescheduling missed work."
+    )
+
+
 async def _handle_snooze(update: Update, incoming_text: str, spec: dict) -> None:
     """Tier-1 snooze: resolve the task and reschedule it (no LLM, spec 3/11)."""
     natural = spec.get("snooze_until_natural")
     params: dict = {"task_query": spec["task_query"]}
     if natural:
-        iso = parse_upcoming_time(natural, datetime.now(ZoneInfo(TIMEZONE)))
+        iso = parse_to_iso(natural, datetime.now(ZoneInfo(TIMEZONE)))
         if iso:
             params["snooze_until"] = iso
     call = {"function": "reschedule_task", "params": params}
@@ -246,10 +266,10 @@ async def _handle_snooze(update: Update, incoming_text: str, spec: dict) -> None
 
 async def process_message(update: Update, incoming_text: str):
     """Route one user message through LLM-first handling and action execution."""
-    global current_task, pending_break, pending_clarification
+    global current_task, pending_break, pending_clarification, pending_screenshot_text
 
     incoming_text = cap_incoming_text(incoming_text)
-    pending_clarification, _ = clear_expired(pending_clarification, None)
+    pending_clarification = clear_expired(pending_clarification)
 
     conversation_buffer.append({"role": "user", "content": incoming_text})
     trim_conversation_buffer(conversation_buffer)
@@ -258,6 +278,7 @@ async def process_message(update: Update, incoming_text: str):
     if is_undo_or_cancel(incoming_text):
         conversation_buffer.clear()
         pending_clarification = None
+        pending_screenshot_text = None
         # A queued compound action hasn't fired yet — just cancel it.
         cancelled = _cancel_pending_deferred()
         if cancelled is not None:
@@ -282,6 +303,7 @@ async def process_message(update: Update, incoming_text: str):
     if is_bug_log_request(incoming_text):
         conversation_buffer.clear()
         pending_clarification = None
+        pending_screenshot_text = None
         body = parse_bug_log_body(incoming_text)
         append_bug_report(
             body,
@@ -302,6 +324,15 @@ async def process_message(update: Update, incoming_text: str):
             conversation_buffer.clear()
             pending_clarification = None
             await _handle_snooze(update, incoming_text, spec)
+            return
+
+    # ── Tier-1: missed work (no LLM) ──────────────────────────────────────────
+    if is_missed_work_request(incoming_text):
+        spec = parse_missed_work_spec(incoming_text)
+        if spec:
+            conversation_buffer.clear()
+            pending_clarification = None
+            await _handle_missed_work(update, incoming_text, spec)
             return
 
     if pending_break:
@@ -493,10 +524,18 @@ async def process_message(update: Update, incoming_text: str):
 
 async def message_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Telegram handler for text messages."""
+    global pending_screenshot_text
+
     if update.effective_user.id != TELEGRAM_USER_ID:
         return
     try:
-        await process_message(update, update.message.text)
+        incoming_text = update.message.text
+        if pending_screenshot_text:
+            incoming_text = (
+                f"{incoming_text}\n\nScreenshot text:\n{pending_screenshot_text}"
+            )
+            pending_screenshot_text = None
+        await process_message(update, incoming_text)
     except Exception as e:
         print(f"❌ message_master error: {e}")
         try:
@@ -505,6 +544,79 @@ async def message_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Something went wrong on my end — try again?"
                 ),
                 label="error reply",
+            )
+        except Exception:
+            pass
+
+
+async def _download_telegram_photo(update: Update) -> tuple[bytes, str, str]:
+    """Download the largest Telegram photo variant (always JPEG)."""
+    photo = update.message.photo[-1]
+    tg_file = await photo.get_file()
+    data = bytes(await tg_file.download_as_bytearray())
+    caption = (update.message.caption or "").strip()
+    return data, "image/jpeg", caption
+
+
+async def photo_master(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Telegram handler for photos (extract text, then process as text)."""
+    global pending_screenshot_text
+
+    if update.effective_user.id != TELEGRAM_USER_ID:
+        return
+    if pending_clarification:
+        await send_with_retry(
+            lambda: update.message.reply_text(
+                "please type the missing info — i can't use a screenshot for that right now"
+            ),
+            label="photo during clarification reply",
+        )
+        return
+    try:
+        image_bytes, mime, caption = await _download_telegram_photo(update)
+        if len(image_bytes) > MAX_PHOTO_BYTES:
+            await send_with_retry(
+                lambda: update.message.reply_text(
+                    "that image is too large — try a smaller screenshot?"
+                ),
+                label="photo size reply",
+            )
+            return
+        extracted = await extract_screenshot_text(image_bytes, mime)
+        print(f"📷 screenshot extracted ({len(extracted)} chars): {extracted[:300]}")
+        if caption:
+            combined = f"{caption}\n\nScreenshot text:\n{extracted}"
+            await process_message(update, cap_incoming_text(combined))
+        else:
+            pending_screenshot_text = extracted
+            await send_with_retry(
+                lambda: update.message.reply_text(
+                    "what should i do with this screenshot?"
+                ),
+                label="photo intent reply",
+            )
+    except ScreenshotNoTextError:
+        await send_with_retry(
+            lambda: update.message.reply_text(
+                "couldn't read anything useful — what's the task title?"
+            ),
+            label="photo no text reply",
+        )
+    except AllModelsExhausted:
+        await send_with_retry(
+            lambda: update.message.reply_text(
+                "can't read screenshots right now — try again shortly or type the task"
+            ),
+            label="photo quota reply",
+        )
+    except Exception as e:
+        print(f"❌ photo_master error: {e}")
+        try:
+            await send_with_retry(
+                lambda: update.message.reply_text(
+                    "Couldn't process that screenshot — try again or type it out?"
+                ),
+                label="photo error reply",
             )
         except Exception:
             pass
@@ -554,6 +666,7 @@ def build_bot():
     )
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_master))
+    application.add_handler(MessageHandler(filters.PHOTO, photo_master))
     application.add_handler(MessageHandler(filters.VOICE, voice_master))
     return application
 
@@ -562,7 +675,7 @@ def schedule_ping(ctx: dict):
     """Schedule a one-shot job to ping when a calendar block starts."""
     start_time = ctx["start_time"]
     task_title = ctx.get("title", "block")
-    fire_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    fire_time = _parse_event_time(start_time)
     if fire_time.tzinfo is None:
         fire_time = fire_time.replace(tzinfo=timezone.utc)
 

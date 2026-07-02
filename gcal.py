@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,17 +24,13 @@ _CREDS_PATH = Path("google_creds.json")
 
 
 @lru_cache(maxsize=2)
-def _build_service(readonly: bool):
+def get_calendar_service(readonly: bool = False):
+    """Return a cached Google Calendar API service client."""
     scopes = SCOPES_READ if readonly else SCOPES_WRITE
     creds = service_account.Credentials.from_service_account_file(
         str(_CREDS_PATH), scopes=scopes
     )
     return build("calendar", "v3", credentials=creds, cache_discovery=False)
-
-
-def get_calendar_service(readonly: bool = False):
-    """Return a cached Google Calendar API service client."""
-    return _build_service(readonly)
 
 
 async def run_calendar_op(fn):
@@ -65,28 +61,6 @@ def snapshot_from_gcal_event(event: dict, action: str) -> dict:
         "summary": event.get("summary"),
         "action": action,
     }
-
-
-def shift_to_tomorrow_same_clock(
-    start: datetime, end: datetime
-) -> tuple[datetime, datetime]:
-    """Move an event interval to tomorrow at the same local clock times."""
-    from zoneinfo import ZoneInfo
-
-    tz = start.tzinfo or ZoneInfo(TIMEZONE)
-    now = datetime.now(tz)
-    target_date = now.date() + timedelta(days=1)
-    duration = end - start
-    new_start = datetime(
-        target_date.year,
-        target_date.month,
-        target_date.day,
-        start.hour,
-        start.minute,
-        start.second,
-        tzinfo=tz,
-    )
-    return new_start, new_start + duration
 
 
 async def get_event(event_id: str, calendar_id: str = CALENDAR_ID) -> dict:

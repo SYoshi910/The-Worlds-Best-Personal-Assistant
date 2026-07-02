@@ -6,11 +6,9 @@ Only Reclaim ``TASK_ASSIGNMENT`` blocks are indexed (filtered via
 populated at startup and refreshed on every Google Calendar webhook.
 """
 
-from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
 
 import reclaim
-from config import TIMEZONE
 
 # event_id -> {title, start, end, task_id, task_index, is_ongoing}
 # ``start``/``end`` are timezone-aware UTC datetimes for easy comparison.
@@ -19,14 +17,10 @@ _blocks: dict[str, dict] = {}
 _chronological: list[str] = []
 
 
-def _parse(iso_str: str) -> datetime:
-    return datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-
-
 def _entry_from_event(event: dict, now: datetime) -> dict:
     assist = event.get("assist") or {}
-    start = _parse(event["eventStart"])
-    end = _parse(event.get("eventEnd", event["eventStart"]))
+    start = reclaim._parse_event_time(event["eventStart"])
+    end = reclaim._parse_event_time(event.get("eventEnd", event["eventStart"]))
     return {
         "event_id": event.get("eventId"),
         "title": event.get("title"),
@@ -104,24 +98,3 @@ def current_and_previous(
             previous = ordered[i]
             break
     return current, previous
-
-
-def blocks_for_task(task_id, day: date | None = None) -> list[dict]:
-    """All indexed blocks for ``task_id``, optionally filtered to a local day."""
-    tz = ZoneInfo(TIMEZONE)
-    result = []
-    for block in chronological():
-        if block["task_id"] != task_id:
-            continue
-        if day is not None and block["start"].astimezone(tz).date() != day:
-            continue
-        result.append(block)
-    return result
-
-
-def find_by_title(query: str) -> list[dict]:
-    """Case-insensitive substring match on block titles, chronological order."""
-    q = (query or "").strip().lower()
-    if not q:
-        return []
-    return [b for b in chronological() if q in (b["title"] or "").lower()]

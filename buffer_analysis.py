@@ -69,7 +69,8 @@ class BreakAssessment:
     action_required: bool = False
 
 
-def _chunks_remaining(task: dict) -> int:
+def chunks_remaining(task: dict) -> int:
+    """Remaining 15-min chunks on a task (prefers Reclaim's own field when present)."""
     remaining = task.get("timeChunksRemaining")
     if remaining is not None:
         return max(0, int(remaining))
@@ -186,7 +187,7 @@ def _tasks_in_horizon(tasks: list[dict], horizon_end: datetime, tz: ZoneInfo) ->
 def compute_allowance(state: ScheduleState) -> AllowanceSnapshot:
     tz = state.tz
     horizon_tasks = _tasks_in_horizon(state.tasks, state.horizon_end, tz)
-    work_remaining = sum(_chunks_remaining(t) * 15 for t in horizon_tasks)
+    work_remaining = sum(chunks_remaining(t) * 15 for t in horizon_tasks)
     schedulable = schedulable_minutes(state.now, state.horizon_end, tz)
     scheduled = scheduled_in_windows(
         state.events, state.now, state.horizon_end, tz
@@ -223,7 +224,7 @@ def _would_be_at_risk_tasks(
             due = due.replace(tzinfo=timezone.utc)
         due_local = due.astimezone(tz)
 
-        remaining_min = _chunks_remaining(task) * 15
+        remaining_min = chunks_remaining(task) * 15
         if remaining_min <= 0:
             continue
 

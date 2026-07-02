@@ -10,16 +10,15 @@ Usage (from project root):
 import argparse
 import asyncio
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import TIMEZONE
-from gcal import get_event, move_event, shift_to_tomorrow_same_clock
+from gcal import get_event, move_event
 from reclaim import (
     get_all_events,
-    get_event_by_id,
     is_past_block,
     is_task_assignment,
     _parse_event_time,
@@ -33,6 +32,33 @@ def _safe_print(s: str) -> None:
     print(s.encode("ascii", errors="replace").decode("ascii"))
 
 
+def _get_event_by_id(events: list[dict], event_id: str) -> dict | None:
+    for event in events:
+        if event.get("eventId") == event_id:
+            return event
+    return None
+
+
+def _shift_to_tomorrow_same_clock(
+    start: datetime, end: datetime
+) -> tuple[datetime, datetime]:
+    """Move an event interval to tomorrow at the same local clock times."""
+    tz = start.tzinfo or ZoneInfo(TIMEZONE)
+    now = datetime.now(tz)
+    target_date = now.date() + timedelta(days=1)
+    duration = end - start
+    new_start = datetime(
+        target_date.year,
+        target_date.month,
+        target_date.day,
+        start.hour,
+        start.minute,
+        start.second,
+        tzinfo=tz,
+    )
+    return new_start, new_start + duration
+
+
 def _is_bcg_block(event: dict) -> bool:
     if not is_task_assignment(event):
         return False
@@ -42,7 +68,7 @@ def _is_bcg_block(event: dict) -> bool:
 def _find_bcg_targets(events: list[dict], event_id: str | None) -> list[dict]:
     now = datetime.now(ZoneInfo(TIMEZONE))
     if event_id:
-        match = get_event_by_id(events, event_id)
+        match = _get_event_by_id(events, event_id)
         return [match] if match else []
     return [e for e in events if _is_bcg_block(e) and is_past_block(e, now)]
 
@@ -75,7 +101,7 @@ async def main():
         event_id = event["eventId"]
         start = _parse_event_time(event["eventStart"])
         end = _parse_event_time(event["eventEnd"])
-        new_start, new_end = shift_to_tomorrow_same_clock(start, end)
+        new_start, new_end = _shift_to_tomorrow_same_clock(start, end)
         task_id = (event.get("assist") or {}).get("taskId")
 
         print()

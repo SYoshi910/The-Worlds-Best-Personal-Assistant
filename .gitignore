@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 
 google_creds.json
+models/
 
 data/bug_reports.jsonl
 data/model_usage.jsonl

@@ -226,6 +226,83 @@ def is_break_rejection(message: str) -> bool:
     return text.startswith("no ") or text == "no"
 
 
+_ALL_MISSED_RE = re.compile(
+    r"\b(?:didn't work on anything|didnt work on anything|missed everything|"
+    r"didn't do anything|didnt do anything|reschedule everything)\b",
+    re.I,
+)
+_KAYAK_RE = re.compile(r"\b(?:reschedule what i had|what i had scheduled)\b", re.I)
+_MISSED_TASK_RE = re.compile(
+    r"\b(?:didn't|didnt|did not|skipped|missed|forgot)\b|"
+    r"\b(?:reschedule|move)\b.*\b(?:missed|skipped)\b",
+    re.I,
+)
+_WEEK_MISSED_RE = re.compile(r"\b(?:this week|my week)\b", re.I)
+_TASK_FROM_MISSED_RE = re.compile(
+    r"\b(?:didn't|didnt|did not|skipped|missed|forgot)\s+"
+    r"(?:all\s+(?:my\s+)?)?(?:work on\s+|to do\s+)?(.+?)"
+    r"(?:\s+today|\s+this week|\s+can you|\s+please|\s+move\b|\s+reschedule\b|$)",
+    re.I,
+)
+_UNTIL_FROM_MISSED_RE = re.compile(
+    r"\b(?:to|until|til|till)\s+(.+?)(?:\.|$)",
+    re.I,
+)
+
+
+def is_missed_work_request(message: str) -> bool:
+    """Tier-1 missed-work detection (not snooze)."""
+    if is_snooze_request(message):
+        return False
+    text = message or ""
+    return bool(
+        _ALL_MISSED_RE.search(text)
+        or _KAYAK_RE.search(text)
+        or _MISSED_TASK_RE.search(text)
+    )
+
+
+def _clean_missed_task_query(raw: str) -> str:
+    task = raw.strip().rstrip(".,!")
+    task = re.sub(r"\s+this week$", "", task, flags=re.I)
+    task = re.sub(r"\s+today$", "", task, flags=re.I)
+    task = re.sub(r"\s+work$", "", task, flags=re.I)
+    return task.strip()
+
+
+def parse_missed_work_spec(message: str) -> dict | None:
+    """Parse missed-work scope for Tier-1 dispatch. None if not actionable."""
+    if not is_missed_work_request(message):
+        return None
+
+    spec: dict = {}
+    if _WEEK_MISSED_RE.search(message):
+        spec["period"] = "week"
+
+    if _ALL_MISSED_RE.search(message):
+        spec["all_missed_today"] = True
+        return spec
+
+    if _KAYAK_RE.search(message):
+        from duration_parser import parse_duration_to_minutes
+
+        mins = parse_duration_to_minutes(message) or 120
+        spec["overlap_since_minutes"] = mins
+        return spec
+
+    m = _TASK_FROM_MISSED_RE.search(message)
+    if m:
+        task = _clean_missed_task_query(m.group(1))
+        if task and task.lower() not in ("anything", "everything", "it"):
+            spec["task_query"] = task
+
+    um = _UNTIL_FROM_MISSED_RE.search(message)
+    if um:
+        spec["snooze_until_natural"] = um.group(1).strip().rstrip(".,!")
+
+    return spec if spec else None
+
+
 def extract_break_window(message: str, now) -> tuple:
     """Return (break_start, break_end) datetimes in local tz."""
     from datetime import datetime, timedelta, time

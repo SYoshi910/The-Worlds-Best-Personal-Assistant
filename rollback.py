@@ -3,12 +3,13 @@
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import gcal
 import reclaim
 from cal_helper import build_task_map, dispatch, get_task_by_query
-from config import TIMEZONE, UNDO_WINDOW_SEC
+from config import UNDO_WINDOW_SEC
+from config import now_local as _now
+from reclaim import _parse_event_time
 
 _last_completed: "CompletedAction | None" = None
 
@@ -22,10 +23,6 @@ class CompletedAction:
     calls_executed: list
     snapshots: list[dict]
     summary: str
-
-
-def _now() -> datetime:
-    return datetime.now(ZoneInfo(TIMEZONE))
 
 
 def get_last_completed() -> CompletedAction | None:
@@ -95,18 +92,6 @@ async def build_amendment_context() -> str | None:
     return "\n".join(lines)
 
 
-async def _resolve_task(
-    task_query: str,
-    current_task: dict | None,
-    preferred_task_ids: list[int] | None,
-) -> dict | None:
-    return await get_task_by_query(
-        task_query,
-        current_task=current_task,
-        preferred_task_ids=preferred_task_ids,
-    )
-
-
 async def _snapshot_before_call(
     call: dict,
     current_task: dict | None = None,
@@ -116,8 +101,8 @@ async def _snapshot_before_call(
     params = call.get("params", {})
 
     if fn == "reschedule_task" and "task_query" in params:
-        task = await _resolve_task(
-            params["task_query"], current_task, preferred_task_ids
+        task = await get_task_by_query(
+            params["task_query"], current_task=current_task, preferred_task_ids=preferred_task_ids
         )
         if task:
             return {
@@ -127,8 +112,8 @@ async def _snapshot_before_call(
             }
 
     if fn == "update_task" and "task_query" in params:
-        task = await _resolve_task(
-            params["task_query"], current_task, preferred_task_ids
+        task = await get_task_by_query(
+            params["task_query"], current_task=current_task, preferred_task_ids=preferred_task_ids
         )
         if task:
             return {
@@ -141,8 +126,8 @@ async def _snapshot_before_call(
             }
 
     if fn in ("extend_task_total", "extend_task_instance") and "task_query" in params:
-        task = await _resolve_task(
-            params["task_query"], current_task, preferred_task_ids
+        task = await get_task_by_query(
+            params["task_query"], current_task=current_task, preferred_task_ids=preferred_task_ids
         )
         if task:
             return {
@@ -152,8 +137,8 @@ async def _snapshot_before_call(
             }
 
     if fn == "complete_task" and "task_query" in params:
-        task = await _resolve_task(
-            params["task_query"], current_task, preferred_task_ids
+        task = await get_task_by_query(
+            params["task_query"], current_task=current_task, preferred_task_ids=preferred_task_ids
         )
         if task:
             return {
@@ -179,8 +164,8 @@ async def _apply_snapshot(snap: dict) -> bool:
     snap_type = snap.get("type")
 
     if action == "move" and snap.get("event_id"):
-        start = datetime.fromisoformat(snap["start"].replace("Z", "+00:00"))
-        end = datetime.fromisoformat(snap["end"].replace("Z", "+00:00"))
+        start = _parse_event_time(snap["start"])
+        end = _parse_event_time(snap["end"])
         await gcal.move_event(snap["event_id"], start, end)
         return True
 
@@ -188,11 +173,19 @@ async def _apply_snapshot(snap: dict) -> bool:
         await gcal.delete_event(snap["event_id"])
         return True
 
+    if snap_type == "move_task_event" and snap.get("event_id"):
+        start = _parse_event_time(snap["start"])
+        end = _parse_event_time(snap["end"])
+        calendar_id = snap.get("calendar_id")
+        if calendar_id:
+            return await reclaim.move_task_event(calendar_id, snap["event_id"], start, end)
+        return False
+
     if snap_type == "reschedule_task":
         task_id = snap["task_id"]
         snooze = snap.get("snoozeUntil")
         if snooze is None:
-            return await reclaim.restore_task_fields(task_id, {"snoozeUntil": None})
+            return await reclaim.update_task_fields(task_id, {"snoozeUntil": None})
         await reclaim.reschedule_task(task_id, snooze_until=snooze)
         return True
 
@@ -203,16 +196,16 @@ async def _apply_snapshot(snap: dict) -> bool:
                 fields[key] = snap[key]
         if not fields:
             return False
-        return await reclaim.restore_task_fields(snap["task_id"], fields)
+        return await reclaim.update_task_fields(snap["task_id"], fields)
 
     if snap_type == "extend_task_total":
-        return await reclaim.restore_task_fields(
+        return await reclaim.update_task_fields(
             snap["task_id"],
             {"timeChunksRequired": snap["timeChunksRequired"]},
         )
 
     if snap_type == "complete_task":
-        return await reclaim.restore_task_fields(
+        return await reclaim.update_task_fields(
             snap["task_id"],
             {
                 "status": snap["status"],
@@ -225,13 +218,6 @@ async def _apply_snapshot(snap: dict) -> bool:
         return await reclaim.delete_task(snap["task_id"])
 
     return False
-
-
-def format_action_summary(summaries: list[str]) -> str:
-    """Join action summaries for the undo ledger."""
-    if not summaries:
-        return ""
-    return "; ".join(summaries)
 
 
 async def execute_calls(
@@ -274,7 +260,7 @@ async def execute_calls(
             user_message=user_message,
             calls_executed=calls,
             snapshots=all_snapshots,
-            summary=format_action_summary(summaries),
+            summary="; ".join(summaries) if summaries else "",
         )
         undo_hint = (
             f"\n\n(Say undo to reverse, or tell me what to change within "

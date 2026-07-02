@@ -2,19 +2,32 @@
 
 import asyncio
 import difflib
+import json
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import google.generativeai as genai
 import numpy as np
 
 import gcal
 import queries
 import reclaim
 import buffer_analysis
-from config import GEMINI_TOKEN, TIMEZONE
+from config import EMBEDDING_MODEL_PATH, TIMEZONE
+from embeddings import embed_documents, embed_text
 
-genai.configure(api_key=GEMINI_TOKEN)
+_EMBED_CACHE = Path("data/task_embeddings.json")
+
+
+def register_task_in_cache(task: dict) -> None:
+    """Index a task from a write response (may not be in get_active_tasks yet)."""
+    global TASK_MAP, TASK_CACHE
+    tid = task.get("id")
+    if not tid:
+        return
+    TASK_CACHE[tid] = task
+    TASK_MAP[tid] = task.get("title", "")
+
 
 async def update_task(
     task_id: int,
@@ -40,7 +53,7 @@ async def update_task(
 
 async def move_due_date(task_id: int, due_date: str) -> bool:
     """Move only a task's due date (spec 13c); due_date is a parsed ISO string."""
-    return await reclaim.update_task_fields(task_id, {"due": due_date})
+    return await update_task(task_id, due_date=due_date)
 
 
 FUNCTION_MAP = {
@@ -66,7 +79,6 @@ COMPOSITE_FUNCTIONS: set[str] = set()
 # convert their task_query/new_task_query into a task_id before calling them.
 COMPOSITE_INTERNAL_QUERY = {
     "reschedule_missed_work",
-    "reschedule_multiple_missed_work",
     "extend_current_gcal_block",
 }
 
@@ -80,7 +92,6 @@ WRITE_FUNCTIONS = {
     "move_due_date",
     "log_work",
     "reschedule_missed_work",
-    "reschedule_multiple_missed_work",
     "switch_active_task",
     "resume_previous_task",
     "extend_current_gcal_block",
@@ -88,48 +99,86 @@ WRITE_FUNCTIONS = {
 
 TASK_MAP: dict[int, str] = {}
 TASK_CACHE: dict[int, dict] = {}
-_embeddings: np.ndarray | None = None
+_embeddings: dict[int, np.ndarray] = {}
+_embedded_as: dict[int, str] = {}
 
 MAX_QUERY_WORDS = 8
-EMBEDDING_MATCH_THRESHOLD = 0.75
-EMBEDDING_MODEL = "models/gemini-embedding-2"
+EMBEDDING_MATCH_THRESHOLD = 0.58
+EMBEDDING_AMBIGUITY_MARGIN = 0.05
+MIN_EMBEDDING_QUERY_WORDS = 2
 
 
-def register_task_in_cache(task: dict) -> None:
-    """Index a task from a write response (may not be in get_active_tasks yet)."""
-    global TASK_MAP, TASK_CACHE
-    tid = task.get("id")
-    if not tid:
+def _embed_text(text: str) -> list[float]:
+    return embed_text(text)
+
+
+def _embed_documents(titles: list[str]) -> list[list[float]]:
+    return embed_documents(titles)
+
+
+def _load_embed_cache() -> None:
+    if not _EMBED_CACHE.exists():
         return
-    TASK_CACHE[tid] = task
-    TASK_MAP[tid] = task.get("title", "")
-
-
-async def _embed_titles(titles: list[str]) -> np.ndarray:
-    """One embedding per title — gemini-embedding-2 aggregates list inputs into one vector."""
-    if not titles:
-        return np.array([])
-
-    def _embed_all():
-        vectors = []
-        for title in titles:
-            result = genai.embed_content(
-                model=EMBEDDING_MODEL,
-                content=title,
-            )
-            vectors.append(result["embedding"])
-        return np.array(vectors)
-
-    return await asyncio.to_thread(_embed_all)
-
-
-async def _rebuild_embeddings() -> None:
-    global _embeddings
-    titles = list(TASK_MAP.values())
-    if not titles:
-        _embeddings = None
+    try:
+        data = json.loads(_EMBED_CACHE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return
-    _embeddings = await _embed_titles(titles)
+    if data.get("model") != EMBEDDING_MODEL_PATH:
+        return
+    for tid_str, entry in (data.get("tasks") or {}).items():
+        tid = int(tid_str)
+        title = entry.get("title", "")
+        if TASK_MAP.get(tid) != title:
+            continue
+        _embeddings[tid] = np.array(entry["v"])
+        _embedded_as[tid] = title
+
+
+def _save_embed_cache() -> None:
+    if not _embeddings:
+        _EMBED_CACHE.unlink(missing_ok=True)
+        return
+    _EMBED_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _EMBED_CACHE.write_text(
+        json.dumps(
+            {
+                "model": EMBEDDING_MODEL_PATH,
+                "tasks": {
+                    str(tid): {"title": _embedded_as[tid], "v": vec.tolist()}
+                    for tid, vec in _embeddings.items()
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+async def _sync_embeddings() -> None:
+    global _embeddings, _embedded_as
+    if not _embeddings and TASK_MAP:
+        _load_embed_cache()
+
+    for tid in list(_embeddings):
+        if tid not in TASK_MAP:
+            del _embeddings[tid]
+            _embedded_as.pop(tid, None)
+
+    to_embed = [
+        (tid, title)
+        for tid, title in TASK_MAP.items()
+        if _embedded_as.get(tid) != title
+    ]
+    if to_embed:
+        vectors = await asyncio.to_thread(_embed_documents, [t for _, t in to_embed])
+        for (tid, title), vec in zip(to_embed, vectors):
+            _embeddings[tid] = np.array(vec)
+            _embedded_as[tid] = title
+
+    if not TASK_MAP:
+        _embeddings.clear()
+        _embedded_as.clear()
+
+    _save_embed_cache()
 
 
 def _register_composites():
@@ -138,7 +187,6 @@ def _register_composites():
     COMPOSITE_FUNCTIONS.update(
         {
             "reschedule_missed_work",
-            "reschedule_multiple_missed_work",
             "switch_active_task",
             "resume_previous_task",
             "extend_current_gcal_block",
@@ -147,7 +195,6 @@ def _register_composites():
     FUNCTION_MAP.update(
         {
             "reschedule_missed_work": composites.reschedule_missed_work,
-            "reschedule_multiple_missed_work": composites.reschedule_multiple_missed_work,
             "switch_active_task": composites.switch_active_task,
             "resume_previous_task": composites.resume_previous_task,
             "extend_current_gcal_block": composites.extend_current_gcal_block,
@@ -173,7 +220,7 @@ def _fmt_clock(iso: str | None) -> str | None:
         return None
     if dt.tzinfo is not None:
         dt = dt.astimezone(ZoneInfo(TIMEZONE))
-    return dt.strftime("%I:%M %p").lstrip("0")
+    return queries.format_clock(dt)
 
 
 def build_action_confirmation(
@@ -222,76 +269,53 @@ def build_action_confirmation(
     return f"Done: {fn_name}"
 
 
-def event_end_delta(
-    event_id: str, end_natural: str, now: datetime | None = None
-) -> int | None:
-    """Minutes to shift a task block's end so it ends at ``end_natural`` (spec 6).
-
-    Reads the block's current end from the warm ``schedule_cache`` and parses the
-    natural target time (e.g. "5pm"). Returns the signed minute delta between the
-    target and the current end, or ``None`` when the block is unknown or the
-    target time can't be parsed.
-    """
-    import schedule_cache
-    from inference import parse_to_iso
-
-    block = schedule_cache.get(event_id)
-    if not block:
-        return None
-    tz = ZoneInfo(TIMEZONE)
-    base = now or datetime.now(tz)
-    iso = parse_to_iso(end_natural, base)
-    if not iso:
-        return None
-    target = datetime.fromisoformat(iso)
-    if target.tzinfo is None:
-        target = target.replace(tzinfo=tz)
-    current_end = block["end"]
-    return int(round((target - current_end).total_seconds() / 60))
-
-
 async def build_task_map(force_refresh: bool = False):
-    """Index active tasks and rebuild embedding vectors for query matching."""
-    global TASK_MAP, TASK_CACHE, _embeddings
+    """Index active tasks and sync embedding vectors (incremental + disk cache)."""
+    global TASK_MAP, TASK_CACHE
 
     tasks = await reclaim.get_active_tasks(force_refresh=force_refresh)
     TASK_MAP = {t["id"]: t["title"] for t in tasks}
     TASK_CACHE = {t["id"]: t for t in tasks}
 
-    if not TASK_MAP:
-        _embeddings = None
+    await _sync_embeddings()
+    if TASK_MAP:
+        print(f"✅ Task map built: {len(TASK_MAP)} tasks indexed")
+    else:
         print("ℹ️ Task map empty — no active tasks to index")
-        return
-
-    await _rebuild_embeddings()
-    print(f"✅ Task map built: {len(TASK_MAP)} tasks indexed")
 
 
 async def upsert_task_in_map(task_id: int):
-    """Refresh one task after a write; full re-embed only if task is new or title changed."""
-    global TASK_MAP, TASK_CACHE
-
+    """Refresh one task after a write."""
     task = await reclaim.get_task(task_id)
     if not task:
         return
 
     if task.get("status") not in ("IN_PROGRESS", "SCHEDULED"):
-        if task_id in TASK_MAP:
-            del TASK_MAP[task_id]
-            TASK_CACHE.pop(task_id, None)
-            await _rebuild_embeddings()
-        return
+        TASK_MAP.pop(task_id, None)
+        TASK_CACHE.pop(task_id, None)
+    else:
+        register_task_in_cache(task)
 
-    old_title = TASK_MAP.get(task_id)
-    register_task_in_cache(task)
+    await _sync_embeddings()
 
-    if old_title is None or old_title != task["title"]:
-        await _rebuild_embeddings()
+
+def _query_overlaps_title(query: str, title: str, *, cutoff: float = 0.6) -> bool:
+    """True when query clearly names this task title (substring or difflib)."""
+    q_lower = query.lower().strip()
+    t_lower = (title or "").lower().strip()
+    if not q_lower or not t_lower:
+        return False
+    if q_lower in t_lower or t_lower in q_lower:
+        return True
+    return difflib.SequenceMatcher(None, q_lower, t_lower).ratio() >= cutoff
 
 
 async def _task_from_ledger(
     query: str, preferred_task_ids: list[int]
 ) -> dict | None:
+    """Resolve via recent-action ledger only for vague refs or title overlap."""
+    from clarification import is_placeholder_query
+
     candidates = []
     for tid in preferred_task_ids:
         task = TASK_CACHE.get(tid) or await reclaim.get_task(tid)
@@ -301,17 +325,21 @@ async def _task_from_ledger(
     if not candidates:
         return None
 
-    if len(candidates) == 1:
-        task = candidates[0]
-        print(f"✅ ledger: '{query}' → '{task.get('title')}'")
+    overlapping = [
+        task
+        for task in candidates
+        if _query_overlaps_title(query, task.get("title", ""))
+    ]
+    if len(overlapping) == 1:
+        task = overlapping[0]
+        print(f"✅ ledger (overlap): '{query}' → '{task.get('title')}'")
         return task
 
-    q_lower = query.lower()
-    for task in candidates:
-        title = (task.get("title") or "").lower()
-        if q_lower in title or title in q_lower:
-            print(f"✅ ledger: '{query}' → '{task.get('title')}'")
-            return task
+    if is_placeholder_query(query) and len(candidates) == 1:
+        task = candidates[0]
+        print(f"✅ ledger (vague): '{query}' → '{task.get('title')}'")
+        return task
+
     return None
 
 
@@ -320,21 +348,16 @@ async def get_task_by_query(
     current_task: dict | None = None,
     preferred_task_ids: list[int] | None = None,
 ) -> dict | None:
-    """Resolve a natural-language task query via ledger, difflib, or embeddings."""
+    """Resolve a natural-language task query via difflib, embeddings, then ledger."""
     query = _normalize_query(query)
     if not query:
         return None
 
-    if not TASK_MAP or _embeddings is None:
+    if not TASK_MAP:
         await build_task_map()
 
     if not TASK_MAP:
         return None
-
-    if preferred_task_ids:
-        ledger_task = await _task_from_ledger(query, preferred_task_ids)
-        if ledger_task:
-            return ledger_task
 
     if current_task and current_task.get("task_id") and current_task.get("title"):
         title = current_task["title"]
@@ -350,7 +373,6 @@ async def get_task_by_query(
             return TASK_CACHE.get(task_id) or await reclaim.get_task(task_id)
 
     titles = list(TASK_MAP.values())
-    ids = list(TASK_MAP.keys())
 
     matches = difflib.get_close_matches(query, titles, n=3, cutoff=0.6)
     if matches:
@@ -361,58 +383,55 @@ async def get_task_by_query(
             print(f"✅ difflib: '{query}' → '{matched_title}'")
             return TASK_CACHE.get(task_id) or await reclaim.get_task(task_id)
 
-    print(f"⚡ difflib miss, falling back to Gemini for '{query}'")
+    print(f"⚡ difflib miss, falling back to embeddings for '{query}'")
 
-    def _embed_query():
-        return genai.embed_content(
-            model=EMBEDDING_MODEL,
-            content=query,
-        )
+    if len(query.split()) < MIN_EMBEDDING_QUERY_WORDS:
+        print(f"⚠️ Query too short for embedding match: '{query}'")
+    else:
+        if not _embeddings:
+            await _sync_embeddings()
 
-    result = await asyncio.to_thread(_embed_query)
-    query_embedding = np.array(result["embedding"])
+        ids = [tid for tid in TASK_MAP if tid in _embeddings]
+        if ids:
+            query_embedding = np.array(await asyncio.to_thread(_embed_text, query))
+            matrix = np.stack([_embeddings[tid] for tid in ids])
+            similarities = np.dot(matrix, query_embedding) / (
+                np.linalg.norm(matrix, axis=1) * np.linalg.norm(query_embedding)
+            )
 
-    embeddings = _embeddings
-    if embeddings is None:
-        return None
-    if embeddings.ndim == 1:
-        embeddings = embeddings.reshape(1, -1)
+            best_idx = int(np.argmax(similarities))
+            best_score = float(similarities[best_idx])
+            runner_up = (
+                float(np.partition(similarities, -2)[-2])
+                if len(similarities) > 1
+                else -1.0
+            )
 
-    if len(ids) != embeddings.shape[0]:
-        print(
-            f"⚠️ Embedding index mismatch ({len(ids)} tasks, "
-            f"{embeddings.shape[0]} vectors); rebuilding"
-        )
-        await _rebuild_embeddings()
-        embeddings = _embeddings
-        ids = list(TASK_MAP.keys())
-        if not ids or embeddings is None:
-            return None
-        if embeddings.ndim == 1:
-            embeddings = embeddings.reshape(1, -1)
+            if best_score >= EMBEDDING_MATCH_THRESHOLD and not (
+                runner_up >= 0
+                and (best_score - runner_up) < EMBEDDING_AMBIGUITY_MARGIN
+            ):
+                task_id = ids[best_idx]
+                print(
+                    f"✅ embedding: '{query}' → '{TASK_MAP[task_id]}' "
+                    f"(score: {best_score:.2f})"
+                )
+                return TASK_CACHE.get(task_id) or await reclaim.get_task(task_id)
 
-    similarities = np.dot(embeddings, query_embedding) / (
-        np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_embedding)
-    )
+            if best_score < EMBEDDING_MATCH_THRESHOLD:
+                print(f"⚠️ No confident match for '{query}' (best: {best_score:.2f})")
+            else:
+                print(
+                    f"⚠️ Ambiguous embedding match for '{query}' "
+                    f"(best: {best_score:.2f}, runner-up: {runner_up:.2f})"
+                )
 
-    best_idx = int(np.argmax(similarities))
-    best_score = float(similarities[best_idx])
-    runner_up = float(np.partition(similarities, -2)[-2]) if len(similarities) > 1 else -1.0
+    if preferred_task_ids:
+        ledger_task = await _task_from_ledger(query, preferred_task_ids)
+        if ledger_task:
+            return ledger_task
 
-    if best_score < EMBEDDING_MATCH_THRESHOLD:
-        print(f"⚠️ No confident match for '{query}' (best: {best_score:.2f})")
-        return None
-
-    if runner_up >= 0 and (best_score - runner_up) < 0.05:
-        print(
-            f"⚠️ Ambiguous embedding match for '{query}' "
-            f"(best: {best_score:.2f}, runner-up: {runner_up:.2f})"
-        )
-        return None
-
-    task_id = ids[best_idx]
-    print(f"✅ Gemini: '{query}' → '{TASK_MAP[task_id]}' (score: {best_score:.2f})")
-    return TASK_CACHE.get(task_id) or await reclaim.get_task(task_id)
+    return None
 
 
 async def dispatch(
@@ -503,7 +522,6 @@ async def dispatch(
                 snapshots.append({"type": "create_task", "task_id": result["id"]})
                 register_task_in_cache(result)
                 touched_task_ids.add(result["id"])
-                await _rebuild_embeddings()
             if fn_name in WRITE_FUNCTIONS:
                 tid = resolved_params.get("task_id")
                 if tid:

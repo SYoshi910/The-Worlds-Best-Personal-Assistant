@@ -135,13 +135,33 @@ def test_get_roundtrip(expected: dict[str, dict]) -> None:
         _check("get() title matches", got["title"] == expected[sample_id]["title"])
 
 
+def _blocks_for_task(task_id, day=None) -> list[dict]:
+    """Local re-implementation of the retired schedule_cache.blocks_for_task."""
+    result = []
+    for block in schedule_cache.chronological():
+        if block["task_id"] != task_id:
+            continue
+        if day is not None and block["start"].astimezone(TZ).date() != day:
+            continue
+        result.append(block)
+    return result
+
+
+def _find_by_title(query: str) -> list[dict]:
+    """Local re-implementation of the retired schedule_cache.find_by_title."""
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    return [b for b in schedule_cache.chronological() if q in (b["title"] or "").lower()]
+
+
 def test_blocks_for_task(expected: dict[str, dict]) -> None:
     if not expected:
         _check("blocks_for_task (skipped — no blocks)", True)
         return
     sample = next(iter(expected.values()))
     task_id = sample["task_id"]
-    from_cache = schedule_cache.blocks_for_task(task_id)
+    from_cache = _blocks_for_task(task_id)
     from_expected = sorted(
         [b for b in expected.values() if b["task_id"] == task_id],
         key=lambda b: b["start"],
@@ -158,7 +178,7 @@ def test_blocks_for_task(expected: dict[str, dict]) -> None:
         )
 
     today = datetime.now(TZ).date()
-    today_blocks = schedule_cache.blocks_for_task(task_id, day=today)
+    today_blocks = _blocks_for_task(task_id, day=today)
     for block in today_blocks:
         local_day = block["start"].astimezone(TZ).date()
         _check(
@@ -169,8 +189,8 @@ def test_blocks_for_task(expected: dict[str, dict]) -> None:
 
 
 def test_find_by_title(expected: dict[str, dict]) -> None:
-    _check("find_by_title empty query", schedule_cache.find_by_title("") == [])
-    _check("find_by_title whitespace", schedule_cache.find_by_title("   ") == [])
+    _check("find_by_title empty query", _find_by_title("") == [])
+    _check("find_by_title whitespace", _find_by_title("   ") == [])
     if not expected:
         _check("find_by_title (skipped — no blocks)", True)
         return
@@ -180,7 +200,7 @@ def test_find_by_title(expected: dict[str, dict]) -> None:
         _check("find_by_title (skipped — title too short)", True)
         return
     needle = title[: max(3, len(title) // 2)].lower()
-    hits = schedule_cache.find_by_title(needle)
+    hits = _find_by_title(needle)
     _check(
         f"find_by_title({needle!r}) finds sample",
         any(h["event_id"] == sample["event_id"] for h in hits),

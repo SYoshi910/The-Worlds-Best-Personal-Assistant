@@ -3,8 +3,7 @@
 Covers every intent that can be under-specified: create_task, switch_task,
 extend_scope, missed_blocks, disambiguate_task. Owns the "do I have enough
 info?" logic (`compute_missing_fields`), the merge-until-complete loop
-(`merge_clarification_reply`), the extend-scope option table (absorbed from the
-old `extend_disambiguation` module), and the task-query gate (`gate_task_queries`)
+(`merge_clarification_reply`), and the task-query gate (`gate_task_queries`)
 that turns unresolvable task references into a clarification instead of a
 runtime error (spec 21).
 """
@@ -15,14 +14,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Literal
-from zoneinfo import ZoneInfo
 
-from config import (
-    CLARIFICATION_TTL_MINUTES,
-    EXTEND_CORRECTION_WINDOW_SEC,
-    EXTEND_SCOPE_TTL_MINUTES,
-    TIMEZONE,
-)
+from config import CLARIFICATION_TTL_MINUTES, EXTEND_SCOPE_TTL_MINUTES
+from config import now_local as _now
 from duration_parser import parse_duration_to_minutes
 from intent import extract_event_category_from_message, is_category_clarification_reply
 from inference import parse_to_iso
@@ -33,8 +27,8 @@ ClarificationKind = Literal[
     "extend_scope",
     "missed_blocks",
     "disambiguate_task",
+    "schedule_activity",
 ]
-ExtendScopeKey = Literal["task_total", "current_instance", "current_block"]
 
 # Task references the LLM must never pass through to execution (spec 21). These
 # are vague pronouns/aliases; when one shows up we clarify rather than guess.
@@ -66,7 +60,11 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "missed_blocks": ("task_query",),
     "disambiguate_task": ("task_query",),
     "extend_scope": (),  # resolved by option choice, not field collection
+    "schedule_activity": ("activity_kind",),
 }
+
+# schedule_activity partial_params also use: name, duration_natural, task_query,
+# event_category, due_date_natural — filled based on activity_kind (gcal vs task).
 
 # Functions whose task reference must resolve to a real Reclaim task before we
 # execute. Non-task GCal blocks (lunch/commute) intentionally excluded.
@@ -87,27 +85,6 @@ TASK_TARGET_FUNCTIONS = frozenset(
 
 TASK_QUERY_KEYS = ("task_query", "new_task_query", "previous_task_query")
 
-_TASK_TOTAL_PHRASES = (
-    r"\bwhole\s+task\b",
-    r"\btotal\s+time\b",
-    r"\boverall\b",
-    r"\bthe\s+whole\s+thing\b",
-    r"\ball\s+future\b",
-    r"^total$",
-)
-_BLOCK_PHRASES = (
-    r"\bjust\s+(?:this|today'?s?)\s+block\b",
-    r"\btoday'?s?\s+block\b",
-    r"\bthis\s+session\b",
-    r"\bthis\s+block\b",
-    r"\bcurrent\s+block\b",
-    r"^block$",
-)
-
-
-def _now() -> datetime:
-    return datetime.now(ZoneInfo(TIMEZONE))
-
 
 # ─── Pending state ────────────────────────────────────────────────────────────
 
@@ -119,17 +96,6 @@ class PendingClarification:
     missing_fields: list[str] = field(default_factory=list)
     options: dict | None = None
     expires_at: datetime = field(default_factory=_now)
-
-    def is_expired(self) -> bool:
-        return _now() >= self.expires_at
-
-
-@dataclass
-class PendingExtendCorrection:
-    executed_call: dict
-    alternate_calls: dict
-    expires_at: datetime
-    user_message: str
 
     def is_expired(self) -> bool:
         return _now() >= self.expires_at
@@ -158,28 +124,12 @@ def new_pending_clarification(
     )
 
 
-def new_extend_correction(
-    executed_call: dict,
-    alternate_calls: dict,
-    user_message: str,
-) -> PendingExtendCorrection:
-    return PendingExtendCorrection(
-        executed_call=executed_call,
-        alternate_calls=alternate_calls,
-        expires_at=_now() + timedelta(seconds=EXTEND_CORRECTION_WINDOW_SEC),
-        user_message=user_message,
-    )
-
-
 def clear_expired(
     pending_clarification: PendingClarification | None,
-    pending_extend_correction: PendingExtendCorrection | None,
-) -> tuple[PendingClarification | None, PendingExtendCorrection | None]:
+) -> PendingClarification | None:
     if pending_clarification and pending_clarification.is_expired():
-        pending_clarification = None
-    if pending_extend_correction and pending_extend_correction.is_expired():
-        pending_extend_correction = None
-    return pending_clarification, pending_extend_correction
+        return None
+    return pending_clarification
 
 
 # ─── Missing-field computation (the while-loop condition) ──────────────────────
@@ -200,13 +150,29 @@ def compute_missing_fields(kind: str, params: dict | None) -> list[str]:
             missing.append("work_duration_natural")
         return missing
 
+    if kind == "schedule_activity":
+        missing: list[str] = []
+        kind_val = (params.get("activity_kind") or "").lower()
+        if kind_val not in ("gcal", "task"):
+            missing.append("activity_kind")
+            return missing
+        if not (params.get("duration_natural") or params.get("work_until_natural")):
+            missing.append("duration_natural")
+        if kind_val == "gcal":
+            if not params.get("name"):
+                missing.append("name")
+        else:
+            if not params.get("task_query") and not params.get("title"):
+                missing.append("title")
+            elif not params.get("task_query"):
+                if not params.get("event_category"):
+                    missing.append("event_category")
+                if not params.get("due_date_natural"):
+                    missing.append("due_date_natural")
+        return missing
+
     required = REQUIRED_FIELDS.get(kind, ())
     return [f for f in required if not params.get(f)]
-
-
-def compute_create_task_missing(params: dict) -> list[str]:
-    """Backwards-compatible wrapper for the create_task missing-field check."""
-    return compute_missing_fields("create_task", params)
 
 
 # ─── Reply merging (accumulate user answers across turns) ──────────────────────
@@ -308,6 +274,63 @@ def _merge_switch_task(partial_params: dict, message: str) -> dict:
     return params
 
 
+_GCAL_ACTIVITY_RE = re.compile(
+    r"\b(?:meeting|call|commute|lunch|dinner|break|appointment|convention|travel|"
+    r"interview|doctor|dentist|flight|drive)\b",
+    re.I,
+)
+
+
+def _merge_schedule_activity(partial_params: dict, message: str) -> dict:
+    """Accumulate GCal-vs-task activity params across clarification turns."""
+    params = dict(partial_params)
+    text = message.strip()
+    lower = text.lower()
+
+    if not params.get("activity_kind"):
+        if _GCAL_ACTIVITY_RE.search(text):
+            params["activity_kind"] = "gcal"
+        elif re.search(r"\b(?:project|task|work on|prep|review|write|finish)\b", lower):
+            params["activity_kind"] = "task"
+
+    if lower in ("gcal", "calendar", "calendar block", "meeting", "event"):
+        params["activity_kind"] = "gcal"
+    elif lower in ("task", "reclaim", "work task"):
+        params["activity_kind"] = "task"
+
+    mins = parse_duration_to_minutes(text)
+    if mins:
+        params["duration_natural"] = text if re.search(r"\bfor\b", lower) else f"{mins} minutes"
+    elif not params.get("work_until_natural"):
+        until = parse_to_iso(text, _now())
+        if until:
+            params["work_until_natural"] = text
+
+    if params.get("activity_kind") == "gcal":
+        m = re.search(
+            r"\b(?:meeting|call|lunch|dinner|appointment|commute|break)\b",
+            text,
+            re.I,
+        )
+        if m:
+            params["name"] = m.group(0).lower()
+        elif not params.get("name") and len(text) <= 40:
+            params.setdefault("name", text)
+    else:
+        title = _extract_title_from_message(text)
+        if title:
+            params["title"] = title
+            params.setdefault("task_query", title)
+        cat = extract_event_category_from_message(text)
+        if cat:
+            params["event_category"] = cat
+        due = _extract_due_natural(text, _now())
+        if due:
+            params["due_date_natural"] = due
+
+    return params
+
+
 def _merge_task_query(partial_params: dict, message: str) -> dict:
     """Fill a single task-reference field for missed_blocks/disambiguate_task."""
     params = dict(partial_params)
@@ -328,106 +351,11 @@ def merge_clarification_reply(pending: PendingClarification, message: str) -> di
         return _merge_create_task(pending.partial_params, message)
     if kind == "switch_task":
         return _merge_switch_task(pending.partial_params, message)
+    if kind == "schedule_activity":
+        return _merge_schedule_activity(pending.partial_params, message)
     if kind in ("missed_blocks", "disambiguate_task"):
         return _merge_task_query(pending.partial_params, message)
     return dict(pending.partial_params)
-
-
-def merge_create_task_reply(pending: PendingClarification, message: str) -> dict:
-    """Backwards-compatible wrapper for the create_task merge path."""
-    return _merge_create_task(pending.partial_params, message)
-
-
-# ─── Extend-scope options (absorbed from extend_disambiguation) ────────────────
-
-SCOPE_TO_FUNCTION = {
-    "task_total": "extend_task_total",
-    "current_instance": "extend_task_instance",
-    "current_block": "extend_current_gcal_block",
-}
-
-FUNCTION_TO_SCOPE = {v: k for k, v in SCOPE_TO_FUNCTION.items()}
-
-
-def _match_scope_phrases(text: str, patterns: tuple[str, ...]) -> bool:
-    return any(re.search(p, text, re.I) for p in patterns)
-
-
-def is_extend_scope_reply(message: str) -> ExtendScopeKey | None:
-    """Map a user reply to an extend scope during clarification."""
-    text = message.strip().lower()
-    if _match_scope_phrases(text, _TASK_TOTAL_PHRASES):
-        return "task_total"
-    if _match_scope_phrases(text, _BLOCK_PHRASES):
-        if re.search(r"\bbuffer\b", text):
-            return "current_block"
-        return "current_instance"
-    if text in ("instance", "today"):
-        return "current_instance"
-    return None
-
-
-def build_scope_options(
-    task_query: str,
-    additional_time_natural: str,
-    current_task: dict | None,
-) -> dict[str, dict]:
-    """Build the "whole task vs today's block" alternate calls keyed by scope."""
-    title = (current_task or {}).get("title") or task_query
-    return {
-        "task_total": {
-            "function": "extend_task_total",
-            "params": {
-                "task_query": task_query,
-                "additional_time_natural": additional_time_natural,
-            },
-        },
-        "current_instance": {
-            "function": "extend_task_instance",
-            "params": {
-                "task_query": title,
-                "additional_time_natural": additional_time_natural,
-            },
-        },
-        "current_block": {
-            "function": "extend_current_gcal_block",
-            "params": {
-                "additional_time_natural": additional_time_natural,
-                "task_query": title,
-            },
-        },
-    }
-
-
-def map_scope_to_function(
-    scope: str,
-    params: dict,
-    current_task: dict | None,
-) -> dict:
-    """Map a chosen scope to a concrete tool call."""
-    title = (current_task or {}).get("title")
-    task_q = params.get("task_query") or title or ""
-    natural = params.get("additional_time_natural", "")
-
-    if scope == "task_total":
-        return {
-            "function": "extend_task_total",
-            "params": {"task_query": task_q, "additional_time_natural": natural},
-        }
-    if scope == "current_block":
-        return {
-            "function": "extend_current_gcal_block",
-            "params": {"additional_time_natural": natural, "task_query": task_q},
-        }
-    return {
-        "function": "extend_task_instance",
-        "params": {"task_query": task_q, "additional_time_natural": natural},
-    }
-
-
-def resolve_scope_clarification(pending_options: dict, scope_key: str) -> dict | None:
-    """Pick the stored call for the scope the user chose."""
-    return (pending_options or {}).get(scope_key)
 
 
 # ─── Task-query gate (spec 21: never error → clarify) ──────────────────────────
@@ -510,6 +438,7 @@ _VALID_LLM_KINDS = {
     "extend_scope",
     "missed_blocks",
     "disambiguate_task",
+    "schedule_activity",
 }
 
 
@@ -551,6 +480,19 @@ def build_clarification_context(pending: PendingClarification) -> str:
             ]
         )
 
+    if pending.kind == "schedule_activity":
+        return "\n".join(
+            [
+                "Pending clarification (schedule_activity):",
+                f"  Accumulated params: {pending.partial_params}",
+                f"  Still missing: {missing}",
+                "  Decide GCal block (activity_kind=gcal) vs Reclaim task "
+                "(activity_kind=task), then gather missing name/duration or "
+                "title/category/due. Emit create_event or create_task/switch_active_task "
+                "when complete.",
+            ]
+        )
+
     if pending.kind in ("missed_blocks", "disambiguate_task"):
         return "\n".join(
             [
@@ -580,10 +522,3 @@ def apply_llm_clarification_fields(data: dict) -> PendingClarification | None:
         missing_fields=data.get("missing_fields") or None,
         options=data.get("extend_options"),
     )
-
-
-def build_create_task_call_from_pending(params: dict) -> dict:
-    call_params = dict(params)
-    if "time_needed_natural" not in call_params:
-        call_params.setdefault("time_needed_natural", "2 hours")
-    return {"function": "create_task", "params": call_params}

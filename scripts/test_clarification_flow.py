@@ -11,18 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clarification import (
     PLACEHOLDER_QUERIES,
     apply_llm_clarification_fields,
-    build_scope_options,
     clear_expired,
-    compute_create_task_missing,
     compute_missing_fields,
     gate_task_queries,
-    is_extend_scope_reply,
     is_placeholder_query,
-    map_scope_to_function,
     merge_clarification_reply,
-    merge_create_task_reply,
     new_pending_clarification,
-    resolve_scope_clarification,
 )
 from zoneinfo import ZoneInfo
 
@@ -41,7 +35,6 @@ def test_compute_missing_fields_create_task():
         "due_date_natural": "tonight",
     }
     assert compute_missing_fields("create_task", complete) == []
-    assert compute_create_task_missing(complete) == []
 
 
 def test_compute_missing_fields_switch_task():
@@ -75,10 +68,10 @@ def test_merge_create_task_category_and_title():
         partial_params={"event_category": "PERSONAL"},
         missing_fields=["title", "due_date_natural"],
     )
-    merged = merge_create_task_reply(pending, "update WD address")
+    merged = merge_clarification_reply(pending, "update WD address")
     assert merged["title"] == "update WD address"
     assert merged["event_category"] == "PERSONAL"
-    assert "title" not in compute_create_task_missing(merged)
+    assert "title" not in compute_missing_fields("create_task", merged)
 
 
 def test_merge_create_task_due_and_duration():
@@ -87,10 +80,10 @@ def test_merge_create_task_due_and_duration():
         partial_params={"title": "xyz", "event_category": "WORK"},
         missing_fields=["due_date_natural"],
     )
-    merged = merge_create_task_reply(pending, "tonight, 15 minutes")
+    merged = merge_clarification_reply(pending, "tonight, 15 minutes")
     assert merged.get("due_date_natural") == "tonight"
     assert merged.get("time_needed_natural")
-    assert compute_create_task_missing(merged) == []
+    assert compute_missing_fields("create_task", merged) == []
 
 
 def test_merge_clarification_switch_task():
@@ -120,27 +113,6 @@ def test_merge_clarification_task_query():
     assert compute_missing_fields("disambiguate_task", merged) == []
 
 
-def test_extend_scope_reply_mapping():
-    assert is_extend_scope_reply("whole task") == "task_total"
-    assert is_extend_scope_reply("just this block") == "current_instance"
-    assert is_extend_scope_reply("hello") is None
-
-
-def test_build_scope_options_and_map():
-    opts = build_scope_options("bcg", "30 minutes", {"title": "BCG prep"})
-    assert set(opts) == {"task_total", "current_instance", "current_block"}
-    assert opts["current_block"]["function"] == "extend_current_gcal_block"
-    assert (
-        map_scope_to_function(
-            "task_total",
-            {"task_query": "bcg", "additional_time_natural": "30 minutes"},
-            None,
-        )["function"]
-        == "extend_task_total"
-    )
-    assert resolve_scope_clarification(opts, "task_total") == opts["task_total"]
-
-
 def test_apply_llm_clarification_all_kinds():
     for kind in (
         "create_task",
@@ -162,7 +134,7 @@ def test_apply_llm_clarification_all_kinds():
 def test_clear_expired_clarification():
     pending = new_pending_clarification(kind="create_task")
     pending.expires_at = datetime.now(ZoneInfo(TIMEZONE)) - timedelta(minutes=1)
-    cleared, _ = clear_expired(pending, None)
+    cleared = clear_expired(pending)
     assert cleared is None
 
 
@@ -228,8 +200,6 @@ def main():
     test_merge_create_task_due_and_duration()
     test_merge_clarification_switch_task()
     test_merge_clarification_task_query()
-    test_extend_scope_reply_mapping()
-    test_build_scope_options_and_map()
     test_apply_llm_clarification_all_kinds()
     test_clear_expired_clarification()
     asyncio.run(test_gate_task_queries_resolves())

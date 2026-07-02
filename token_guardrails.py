@@ -53,12 +53,7 @@ def prepare_messages_for_llm(
 ) -> list[dict]:
     """Return a capped copy of the conversation buffer for the LLM API."""
     trimmed = [dict(m) for m in buffer]
-    while len(trimmed) > max_turns:
-        trimmed.pop(0)
-    for msg in trimmed:
-        content = msg.get("content")
-        if isinstance(content, str) and len(content) > max_chars_per_message:
-            msg["content"] = truncate_text(content, max_chars_per_message)
+    trim_conversation_buffer(trimmed, max_turns=max_turns, max_chars_per_message=max_chars_per_message)
     return trimmed
 
 

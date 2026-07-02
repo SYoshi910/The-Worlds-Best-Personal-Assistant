@@ -4,7 +4,7 @@ import json
 
 import re
 
-from datetime import datetime, timedelta
+from datetime import datetime, time as dt_time, timedelta
 
 
 
@@ -21,17 +21,16 @@ from duration_parser import parse_duration_to_chunks, parse_duration_to_minutes
 from intent import extract_event_category_from_message
 from reclaim import minutes_to_chunks, normalize_event_category
 
-from system_prompts import SYSTEM_PROMPT_CAL
+from model_router import complete_google_vision
+from system_prompts import SYSTEM_PROMPT_CAL, VISION_EXTRACT_PROMPT
 
-from token_guardrails import cap_snapshot, prepare_messages_for_llm
+from token_guardrails import cap_incoming_text, cap_snapshot, prepare_messages_for_llm
 
 
 
 client = AsyncGroq(api_key=GROQ_TOKEN)
 
 cal = pdt.Calendar()
-
-
 
 DATE_FIELD_MAP = {
 
@@ -93,6 +92,8 @@ _BARE_TIME_RE = re.compile(r"^\s*\d{1,2}(?::\d{2})?\s*$")
 _MERIDIEM_RE = re.compile(
     r"\b(?:am|pm|a\.m|p\.m|noon|midnight|o'?clock)\b", re.I
 )
+_REPLY_PREFIX_RE = re.compile(r"^\s*:?reply:\s*", re.I)
+_PAST_START_OK_FUNCS = frozenset({"create_event", "log_work"})
 
 
 def _bump_to_upcoming(parsed: datetime, base_date: datetime, raw: str) -> datetime:
@@ -113,6 +114,13 @@ def _bump_to_upcoming(parsed: datetime, base_date: datetime, raw: str) -> dateti
     return parsed
 
 
+def _sanitize_reply_text(reply: str) -> str:
+    text = _REPLY_PREFIX_RE.sub("", (reply or "").strip())
+    if len(text) >= 2 and text[0] == text[-1] == '"':
+        text = text[1:-1]
+    return text.strip() or "..."
+
+
 def parse_to_iso(natural_date_str: str, base_date: datetime) -> str | None:
     """Parse natural-language date/time to ISO string in local timezone."""
 
@@ -121,6 +129,16 @@ def parse_to_iso(natural_date_str: str, base_date: datetime) -> str | None:
         return None
 
     raw = natural_date_str.strip()
+    if raw.lower() == "now":
+        return base_date.isoformat()
+    if raw.lower() == "tonight":
+        midnight = datetime.combine(
+            base_date.date() + timedelta(days=1),
+            dt_time(0, 0),
+            tzinfo=ZoneInfo(TIMEZONE),
+        )
+        return midnight.isoformat()
+
     time_struct, parse_status = cal.parse(raw, sourceTime=base_date)
 
     if parse_status > 0:
@@ -131,16 +149,15 @@ def parse_to_iso(natural_date_str: str, base_date: datetime) -> str | None:
 
         return parsed.isoformat()
 
+    if _BARE_TIME_RE.match(raw):
+        for suffix in ("pm", "am"):
+            ts, status = cal.parse(f"{raw} {suffix}", sourceTime=base_date)
+            if status > 0:
+                parsed = datetime(*ts[:6], tzinfo=ZoneInfo(TIMEZONE))
+                parsed = _bump_to_upcoming(parsed, base_date, f"{raw} {suffix}")
+                return parsed.isoformat()
+
     return None
-
-
-def parse_upcoming_time(phrase: str, base_date: datetime) -> str | None:
-    """Parse a time phrase to its next upcoming occurrence (spec 18/20).
-
-    Thin wrapper over :func:`parse_to_iso`; for am/pm-ambiguous bare clock times
-    it returns the next future occurrence rather than today's already-passed time.
-    """
-    return parse_to_iso(phrase, base_date)
 
 
 def _parse_until_as_minutes(natural: str, base_date: datetime) -> int | None:
@@ -184,6 +201,7 @@ _CLOSE_THINK = "</" + "think" + ">"
 _THINK_BLOCK = re.compile(
     "(?is)" + re.escape(_OPEN_THINK) + r".*?" + re.escape(_CLOSE_THINK)
 )
+_GEMMA_THOUGHT_BLOCK = re.compile(r"(?is)<thought>.*?</thought>")
 
 
 def _strip_reasoning_wrappers(raw: str) -> str:
@@ -195,20 +213,9 @@ def _strip_reasoning_wrappers(raw: str) -> str:
             return match.group(1).strip()
     if _THINK_BLOCK.search(text):
         text = _THINK_BLOCK.sub("", text).strip()
+    if _GEMMA_THOUGHT_BLOCK.search(text):
+        text = _GEMMA_THOUGHT_BLOCK.sub("", text).strip()
     return text
-
-
-def _groq_model_kwargs(model: str) -> dict:
-    """Per-model Groq options for reliable JSON tool output."""
-    m = model.lower()
-    extra: dict = {}
-    if "qwen" in m:
-        extra["reasoning_effort"] = "none"
-    elif "gpt-oss" in m:
-        extra["reasoning_effort"] = "low"
-    if not extra:
-        return {}
-    return {"extra_body": extra}
 
 
 def _extract_json_object(raw: str) -> dict | None:
@@ -236,6 +243,25 @@ def _extract_json_object(raw: str) -> dict | None:
     return None
 
 
+def _try_parse_loose_reply(raw: str) -> dict | None:
+    """Recover Qwen-style ':reply: \"...\"' when strict JSON parsing fails."""
+    text = _strip_reasoning_wrappers(raw)
+    m = re.search(r':?reply:\s*"((?:[^"\\]|\\.)*)"', text, re.I | re.S)
+    if m:
+        reply_text = m.group(1)
+    else:
+        m = re.search(r":?reply:\s*(.+?)(?:\n\s*\w+\s*:|$)", text, re.I | re.S)
+        if not m:
+            return None
+        reply_text = m.group(1).strip().strip('"')
+    return {
+        "action_required": False,
+        "clarification_required": False,
+        "reply": _sanitize_reply_text(reply_text),
+        "calls": [],
+    }
+
+
 def _parse_llm_json(raw: str) -> dict:
 
     parsed = _extract_json_object(raw)
@@ -244,13 +270,17 @@ def _parse_llm_json(raw: str) -> dict:
 
         return parsed
 
+    loose = _try_parse_loose_reply(raw)
+    if loose is not None:
+        return loose
+
     return {
 
         "action_required": False,
 
         "clarification_required": False,
 
-        "reply": raw,
+        "reply": _sanitize_reply_text(raw),
 
         "calls": [],
 
@@ -276,6 +306,7 @@ def _normalize_llm_response(data: dict) -> dict:
 
     data["action_required"] = action_required
     data["clarification_required"] = clarification_required
+    data["reply"] = _sanitize_reply_text(str(data.get("reply", "...")))
     data.setdefault("reply", "...")
     data.setdefault("calls", [])
     data.setdefault("clarification_kind", None)
@@ -400,9 +431,31 @@ def _normalize_llm_numeric_params(calls: list) -> list[str]:
 
 
 
+def _fold_missed_work_calls(calls: list) -> None:
+    """Merge legacy reschedule_multiple_missed_work into reschedule_missed_work."""
+    for call in calls:
+        if call.get("function") != "reschedule_multiple_missed_work":
+            continue
+        p = call.get("params") or {}
+        merged = {
+            k: v
+            for k, v in {
+                "task_query": p.get("task_query"),
+                "task_queries": p.get("task_queries"),
+                "all_missed_today": p.get("all_missed_today"),
+                "period": p.get("period"),
+                "snooze_until_natural": p.get("snooze_until_natural"),
+            }.items()
+            if v not in (None, False, [], "")
+        }
+        call["function"] = "reschedule_missed_work"
+        call["params"] = merged
+
+
 def _normalize_call_params(calls: list) -> list[str]:
 
     errors = []
+    _fold_missed_work_calls(calls)
 
     for call in calls:
 
@@ -449,8 +502,6 @@ def _validate_calls(calls: list, current_time: datetime) -> list[str]:
         "reschedule_task",
 
         "reschedule_missed_work",
-
-        "reschedule_multiple_missed_work",
 
         "switch_active_task",
 
@@ -521,7 +572,10 @@ def _validate_calls(calls: list, current_time: datetime) -> list[str]:
                         parsed = parsed.replace(tzinfo=ZoneInfo(TIMEZONE))
 
                     if parsed < current_time:
-
+                        if fn in _PAST_START_OK_FUNCS and iso_key == "start":
+                            continue
+                        if fn == "log_work" and iso_key == "end":
+                            continue
                         errors.append(f"{fn}: {iso_key} is in the past")
 
                 except ValueError:
@@ -587,7 +641,7 @@ async def call_llm(
 
     clarification_context: str | None = None,
 
-    model: str = "openai/gpt-oss-120b",
+    model: str = "qwen/qwen3-32b",
 
 ) -> dict:
     """Call the LLM with conversation context and normalize/validate any tool calls."""
@@ -719,6 +773,9 @@ async def call_llm(
             # and hand structured errors back so the bot can route to a clarification
             # instead of executing something wrong.
 
+            if DEV_RELOAD:
+                print(f"⚠️ validation blocked calls: {all_errors}")
+
             data["action_required"] = False
 
             data["calls"] = []
@@ -739,6 +796,8 @@ async def call_llm_benchmark(
     model: str = "llama-3.3-70b-versatile",
 ) -> dict:
     """Like call_llm but returns usage, raw output, and validation errors for benchmarking."""
+    from model_router import _groq_model_kwargs
+
     current_time = datetime.now(ZoneInfo(TIMEZONE))
 
     if current_task and current_task.get("title"):
@@ -846,4 +905,17 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
     )
 
     return transcription.text
+
+
+class ScreenshotNoTextError(Exception):
+    """Vision model found no actionable text in the image."""
+
+
+async def extract_screenshot_text(image_bytes: bytes, mime_type: str) -> str:
+    """Extract task-relevant plain text from a screenshot via Google vision."""
+    result = await complete_google_vision(image_bytes, mime_type, VISION_EXTRACT_PROMPT)
+    text = cap_incoming_text(result.raw.strip())
+    if not text or text.upper() == "NO_TEXT_FOUND":
+        raise ScreenshotNoTextError()
+    return text
 

@@ -187,27 +187,48 @@ def event_on_local_day(event: dict, day: date) -> bool:
     return local.date() == day
 
 
-def get_event_by_id(events: list[dict], event_id: str) -> dict | None:
-    for event in events:
-        if event.get("eventId") == event_id:
-            return event
-    return None
+def _is_missed_block_on_day(event: dict, day: date, now: datetime) -> bool:
+    """Task-assignment block on ``day`` that is already past."""
+    if not is_task_assignment(event):
+        return False
+    if not event_on_local_day(event, day):
+        return False
+    return is_past_block(event, now)
 
 
-def refresh_ongoing_state(current_task: dict) -> dict:
-    """Recompute is_ongoing from stored start/end times (ping may have been scheduled earlier)."""
-    if not current_task.get("start_time"):
-        return current_task
-    now = datetime.now(timezone.utc)
-    start = _parse_event_time(current_task["start_time"])
-    end = _parse_event_time(current_task.get("end_time", current_task["start_time"]))
-    updated = dict(current_task)
-    updated["is_ongoing"] = start <= now < end
-    return updated
+def _is_missed_block_today(event: dict, day: date, now: datetime) -> bool:
+    return _is_missed_block_on_day(event, day, now)
+
+
+def _week_range(now: datetime | None = None) -> tuple[date, date]:
+    """Local Mon–today inclusive (current calendar week so far)."""
+    if now is None:
+        now = datetime.now(ZoneInfo(TIMEZONE))
+    today = now.astimezone(ZoneInfo(TIMEZONE)).date()
+    week_start = today - timedelta(days=today.weekday())
+    return week_start, today
+
+
+def _is_missed_block_in_period(
+    event: dict, period: str, now: datetime, *, day: date | None = None
+) -> bool:
+    if period == "week":
+        start_day, end_day = _week_range(now)
+        if not is_task_assignment(event) or not is_past_block(event, now):
+            return False
+        local_day = _parse_event_time(event["eventStart"]).astimezone(ZoneInfo(TIMEZONE)).date()
+        return start_day <= local_day <= end_day
+    if day is None:
+        day = datetime.now(ZoneInfo(TIMEZONE)).date()
+    return _is_missed_block_on_day(event, day, now)
 
 
 async def find_missed_task_blocks(
-    task_id: int, day: date | None = None, events: list[dict] | None = None
+    task_id: int,
+    day: date | None = None,
+    events: list[dict] | None = None,
+    *,
+    period: str = "today",
 ) -> list[dict]:
     if day is None:
         day = datetime.now(ZoneInfo(TIMEZONE)).date()
@@ -219,20 +240,18 @@ async def find_missed_task_blocks(
         assist = event.get("assist") or {}
         if assist.get("taskId") != task_id:
             continue
-        if not is_task_assignment(event):
-            continue
-        if not event_on_local_day(event, day):
-            continue
-        if not is_past_block(event, now):
+        if not _is_missed_block_in_period(event, period, now, day=day):
             continue
         blocks.append(event)
     return sorted(blocks, key=lambda e: _parse_event_time(e["eventStart"]))
 
 
-async def task_ids_with_missed_blocks_today(
+async def task_ids_with_missed_blocks(
     events: list[dict] | None = None,
+    *,
+    period: str = "today",
 ) -> list[int]:
-    """Distinct Reclaim task ids that have missed blocks today."""
+    """Distinct task ids with missed blocks in ``period`` (today or week)."""
     day = datetime.now(ZoneInfo(TIMEZONE)).date()
     now = datetime.now(timezone.utc)
     if events is None:
@@ -243,14 +262,83 @@ async def task_ids_with_missed_blocks_today(
         task_id = assist.get("taskId")
         if not task_id:
             continue
-        if not is_task_assignment(event):
-            continue
-        if not event_on_local_day(event, day):
-            continue
-        if not is_past_block(event, now):
+        if not _is_missed_block_in_period(event, period, now, day=day):
             continue
         ids.add(task_id)
     return sorted(ids)
+
+
+async def task_ids_with_missed_blocks_today(
+    events: list[dict] | None = None,
+) -> list[int]:
+    return await task_ids_with_missed_blocks(events, period="today")
+
+
+def _overlaps(
+    block_start: datetime, block_end: datetime, win_start: datetime, win_end: datetime
+) -> bool:
+    return block_start < win_end and block_end > win_start
+
+
+async def find_missed_blocks_in_window(
+    window_start: datetime,
+    window_end: datetime,
+    events: list[dict] | None = None,
+) -> list[dict]:
+    """Missed task blocks today that overlap ``[window_start, window_end)``."""
+    day = datetime.now(ZoneInfo(TIMEZONE)).date()
+    now = datetime.now(timezone.utc)
+    if events is None:
+        events = await get_all_events()
+    hits: list[dict] = []
+    for event in events:
+        if not _is_missed_block_in_period(event, "today", now, day=day):
+            continue
+        start = _parse_event_time(event["eventStart"])
+        end = _parse_event_time(event.get("eventEnd", event["eventStart"]))
+        if _overlaps(start, end, window_start, window_end):
+            hits.append(event)
+    return sorted(hits, key=lambda e: _parse_event_time(e["eventStart"]))
+
+
+def resolve_snooze_target(
+    snooze_until_natural: str | None, now: datetime
+) -> tuple[datetime | None, str | None]:
+    """Return ``(move_target, snooze_option)`` — use move when natural parses to a time."""
+    from inference import parse_to_iso
+
+    if not snooze_until_natural:
+        return None, "FROM_NOW_1H"
+
+    text = snooze_until_natural.strip().lower()
+    if text in ("tomorrow", "tomorrow morning", "tomorrow afternoon", "tomorrow evening"):
+        return None, "TOMORROW"
+    if "next week" in text:
+        return None, "NEXT_WEEK"
+
+    if text.startswith("in "):
+        from duration_parser import parse_duration_to_minutes
+
+        mins = parse_duration_to_minutes(text)
+        if mins is not None:
+            if mins <= 15:
+                return None, "FROM_NOW_15M"
+            if mins <= 30:
+                return None, "FROM_NOW_30M"
+            if mins <= 60:
+                return None, "FROM_NOW_1H"
+            if mins <= 120:
+                return None, "FROM_NOW_2H"
+            return None, "FROM_NOW_4H"
+
+    iso = parse_to_iso(snooze_until_natural, now)
+    if iso:
+        target = datetime.fromisoformat(iso)
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=ZoneInfo(TIMEZONE))
+        return target, None
+
+    return None, "FROM_NOW_1H"
 
 
 def enrich_event_context(event: dict, now: datetime | None = None) -> dict:
@@ -289,12 +377,25 @@ async def complete_task(task_id: int):
 
 
 async def log_work(task_id: int, start: str, end: str):
-    url = f"{BASE_URL}/tasks/{task_id}/log"
-    payload = {"start": start, "end": end}
-    response = await _get_client().post(url, json=payload)
+    """Record time spent via Reclaim planner (not the deprecated /tasks/{id}/log path)."""
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+
+    minutes = max(1, int((end_dt - start_dt).total_seconds() // 60))
+    end_utc = end_dt.astimezone(timezone.utc)
+    end_param = end_utc.isoformat()[:-9] + "Z"
+
+    url = f"{BASE_URL}/planner/log-work/task/{task_id}"
+    response = await _get_client().post(
+        url, params={"minutes": minutes, "end": end_param}
+    )
     if response.status_code in (200, 201, 204):
         invalidate_reclaim_cache()
-        print(f"✅ Logged work for task {task_id}.")
+        print(f"✅ Logged work for task {task_id} ({minutes} min).")
         return True
     print(f"❌ Error logging work: {response.status_code} - {response.text}")
     return False
@@ -318,6 +419,67 @@ async def reschedule_task(task_id: int, snooze_until: str | None = None):
 _SNOOZE_OPTION_BY_HOURS = {1: "FROM_NOW_1H"}
 
 
+async def reschedule_task_event(
+    calendar_id: int,
+    event_id: str,
+    *,
+    snooze_option: str = "FROM_NOW_1H",
+) -> bool:
+    """Reclaim planner: delete missed instance and reschedule (no GCal lock)."""
+    url = f"{BASE_URL}/planner/task/{calendar_id}/{event_id}/reschedule"
+    response = await _get_client().post(url, params={"snoozeOption": snooze_option})
+    if response.status_code in (200, 201, 204):
+        invalidate_reclaim_cache()
+        print(f"✅ Rescheduled missed event {event_id} ({snooze_option}).")
+        return True
+    print(
+        f"❌ Error rescheduling event {event_id}: "
+        f"{response.status_code} - {response.text}"
+    )
+    return False
+
+
+async def move_task_event(
+    calendar_id: int,
+    event_id: str,
+    start: datetime,
+    end: datetime,
+) -> bool:
+    """Reclaim planner: move a task event to explicit start/end (no raw GCal patch)."""
+    url = f"{BASE_URL}/planner/event/{calendar_id}/{event_id}/move"
+    params = {"start": start.isoformat(), "end": end.isoformat()}
+    response = await _get_client().post(url, params=params)
+    if response.status_code in (200, 201, 204):
+        invalidate_reclaim_cache()
+        print(f"✅ Moved task event {event_id} to {start.isoformat()}.")
+        return True
+    print(
+        f"❌ Error moving event {event_id}: {response.status_code} - {response.text}"
+    )
+    return False
+
+
+async def reschedule_missed_event(
+    event: dict,
+    target: datetime | None,
+    snooze_option: str | None,
+) -> bool:
+    """Reschedule one missed task block via the Reclaim planner."""
+    calendar_id = event.get("calendarId")
+    event_id = event.get("eventId")
+    if not calendar_id or not event_id:
+        return False
+    if target is not None:
+        start = _parse_event_time(event["eventStart"])
+        end = _parse_event_time(event.get("eventEnd", event["eventStart"]))
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=ZoneInfo(TIMEZONE))
+        return await move_task_event(calendar_id, event_id, target, target + (end - start))
+    return await reschedule_task_event(
+        calendar_id, event_id, snooze_option=snooze_option or "FROM_NOW_1H"
+    )
+
+
 async def snooze_task(task_id: int, *, hours: int = 1) -> bool:
     """Snooze a task off the current ping via the Reclaim planner.
 
@@ -326,15 +488,14 @@ async def snooze_task(task_id: int, *, hours: int = 1) -> bool:
     PATCH at now + ``hours``.
     """
     option = _SNOOZE_OPTION_BY_HOURS.get(hours)
-    if option:
-        url = f"{BASE_URL}/planner/task/{task_id}/snooze"
-        response = await _get_client().post(url, params={"snoozeOption": option})
-    else:
+    if not option:
         snooze_until = (
             datetime.now(timezone.utc) + timedelta(hours=hours)
         ).isoformat()
-        url = f"{BASE_URL}/tasks/{task_id}"
-        response = await _get_client().patch(url, json={"snoozeUntil": snooze_until})
+        return await reschedule_task(task_id, snooze_until=snooze_until)
+
+    url = f"{BASE_URL}/planner/task/{task_id}/snooze"
+    response = await _get_client().post(url, params={"snoozeOption": option})
     if response.status_code in (200, 201, 204):
         invalidate_reclaim_cache()
         print(f"✅ Snoozed task {task_id} for {hours}h.")
@@ -362,18 +523,6 @@ async def plan_work(
         print(f"✅ Planned work for task {task_id} at {date_time}.")
         return True
     print(f"❌ Error planning work: {response.status_code} - {response.text}")
-    return False
-
-
-async def start_task(task_id: int) -> bool:
-    """Start the work timer on a task via the planner (optional, after plan_work)."""
-    url = f"{BASE_URL}/planner/start/task/{task_id}"
-    response = await _get_client().post(url)
-    if response.status_code in (200, 201, 204):
-        invalidate_reclaim_cache()
-        print(f"✅ Started task {task_id}.")
-        return True
-    print(f"❌ Error starting task: {response.status_code} - {response.text}")
     return False
 
 
@@ -409,17 +558,6 @@ async def update_task_fields(task_id: int, fields: dict) -> bool:
         print(f"✅ Updated task {task_id} fields.")
         return True
     print(f"❌ Error updating task: {response.status_code} - {response.text}")
-    return False
-
-
-async def restore_task_fields(task_id: int, fields: dict) -> bool:
-    url = f"{BASE_URL}/tasks/{task_id}"
-    response = await _get_client().patch(url, json=fields)
-    if response.status_code in (200, 204):
-        invalidate_reclaim_cache()
-        print(f"✅ Restored task {task_id} fields.")
-        return True
-    print(f"❌ Error restoring task: {response.status_code} - {response.text}")
     return False
 
 

@@ -1,0 +1,927 @@
+{
+  "run_at": "2026-07-01T20:41:22.860068",
+  "models": [
+    "qwen/qwen3-32b"
+  ],
+  "case_count": 27,
+  "results": [
+    {
+      "case_id": "missed_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i lowk didnt work on any BCG prep today can you reschedule?",
+      "functions": [
+        "reschedule_multiple_missed_work"
+      ],
+      "params": [
+        {
+          "snooze_until_natural": "tomorrow",
+          "all_missed_today": true
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1021,
+        "completion_tokens": 106,
+        "total_tokens": 1127
+      },
+      "reply_preview": "got it, rescheduling bcg prep for tomorrow",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, rescheduling bcg prep for tomorrow\",\n  \"calls\": [\n    {\n      \"function\": \"reschedule_multiple_missed_work\",\n      \"params\": {\n        \"sn",
+      "error": null,
+      "latency_ms": 3415,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected one of ['reschedule_missed_work'], got ['reschedule_multiple_missed_work']"
+        ]
+      }
+    },
+    {
+      "case_id": "vague_switch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ive been actually working on something else",
+      "functions": [],
+      "params": [],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1050,
+        "completion_tokens": 70,
+        "total_tokens": 1120
+      },
+      "reply_preview": "oh okay, what would you like to switch to? let me know and i can help you move over",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"oh okay, what would you like to switch to? let me know and i can help you move over\",\n  \"calls\": []\n}",
+      "error": null,
+      "latency_ms": 477,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "extend_30min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey ill be working on this for 30 more minutes",
+      "functions": [
+        "extend_task_instance"
+      ],
+      "params": [
+        {
+          "task_query": "bcg prep",
+          "additional_minutes": 30
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1054,
+        "completion_tokens": 107,
+        "total_tokens": 1161
+      },
+      "reply_preview": "got it, i'll extend your current block by 30 minutes",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, i'll extend your current block by 30 minutes\",\n  \"calls\": [\n    {\n      \"function\": \"extend_task_instance\",\n      \"params\": {\n        \"tas",
+      "error": null,
+      "latency_ms": 375,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "still_on_last_task",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey im actually still working on my last task",
+      "functions": [
+        "extend_task_instance"
+      ],
+      "params": [
+        {
+          "task_query": "data infra pres",
+          "additional_minutes": 15
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1051,
+        "completion_tokens": 107,
+        "total_tokens": 1158
+      },
+      "reply_preview": "got it! i'll keep you focused on that data infra pres block",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it! i'll keep you focused on that data infra pres block\",\n  \"calls\": [\n    {\n      \"function\": \"extend_task_instance\",\n      \"params\": {\n     ",
+      "error": null,
+      "latency_ms": 755,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "resume_previous_with_duration",
+      "model": "qwen/qwen3-32b",
+      "prompt": "hey im actually still working on my last task for another 20 minutes",
+      "functions": [
+        "extend_task_instance"
+      ],
+      "params": [
+        {
+          "task_query": "data infra pres",
+          "additional_minutes": 20
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1057,
+        "completion_tokens": 108,
+        "total_tokens": 1165
+      },
+      "reply_preview": "got it, i'll extend your current block for 20 more minutes",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, i'll extend your current block for 20 more minutes\",\n  \"calls\": [\n    {\n      \"function\": \"extend_task_instance\",\n      \"params\": {\n      ",
+      "error": null,
+      "latency_ms": 410,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected one of ['resume_previous_task'], got ['extend_task_instance']"
+        ]
+      }
+    },
+    {
+      "case_id": "read_schedule_week",
+      "model": "qwen/qwen3-32b",
+      "prompt": "what do i have due this week",
+      "functions": [
+        "get_schedule_for_window"
+      ],
+      "params": [
+        {
+          "full_week": true
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1012,
+        "completion_tokens": 84,
+        "total_tokens": 1096
+      },
+      "reply_preview": "let me check your schedule",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"let me check your schedule\",\n  \"calls\": [\n    {\n      \"function\": \"get_schedule_for_window\",\n      \"params\": {\n        \"full_week\": true\n      }\n ",
+      "error": null,
+      "latency_ms": 6851,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "reply_only expected, got calls ['get_schedule_for_window']"
+        ]
+      }
+    },
+    {
+      "case_id": "read_tomorrow_afternoon",
+      "model": "qwen/qwen3-32b",
+      "prompt": "what am i doing tomorrow afternoon",
+      "functions": [
+        "get_schedule_for_window"
+      ],
+      "params": [
+        {
+          "day": "tomorrow",
+          "period": "afternoon",
+          "full_week": false
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1011,
+        "completion_tokens": 100,
+        "total_tokens": 1111
+      },
+      "reply_preview": "let me check your schedule",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"let me check your schedule\",\n  \"calls\": [\n    {\n      \"function\": \"get_schedule_for_window\",\n      \"params\": {\n        \"day\": \"tomorrow\",\n        ",
+      "error": null,
+      "latency_ms": 8572,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "create_startup_pitch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "add a task called startup pitch, 5 hrs, due friday",
+      "functions": [
+        "create_task"
+      ],
+      "params": [
+        {
+          "title": "startup pitch",
+          "event_category": "WORK",
+          "due_date": "2026-07-03T20:37:28-07:00",
+          "time_needed": 20
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1018,
+        "completion_tokens": 122,
+        "total_tokens": 1140
+      },
+      "reply_preview": "got it, adding startup pitch with 5 hours needed, due friday",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, adding startup pitch with 5 hours needed, due friday\",\n  \"calls\": [\n    {\n      \"function\": \"create_task\",\n      \"params\": {\n        \"titl",
+      "error": null,
+      "latency_ms": 8933,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "create_groceries",
+      "model": "qwen/qwen3-32b",
+      "prompt": "add task buy groceries tonight",
+      "functions": [
+        "create_task"
+      ],
+      "params": [
+        {
+          "title": "buy groceries",
+          "event_category": "PERSONAL",
+          "priority": "P1",
+          "due_date": "2026-07-02T00:00:00-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1010,
+        "completion_tokens": 117,
+        "total_tokens": 1127
+      },
+      "reply_preview": "got it, i'll add the groceries task for tonight",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, i'll add the groceries task for tonight\",\n  \"calls\": [\n    {\n      \"function\": \"create_task\",\n      \"params\": {\n        \"title\": \"buy groc",
+      "error": null,
+      "latency_ms": 8766,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "should clarify but called ['create_task']"
+        ]
+      }
+    },
+    {
+      "case_id": "create_personal_followup",
+      "model": "qwen/qwen3-32b",
+      "prompt": "personal",
+      "functions": [
+        "create_task"
+      ],
+      "params": [
+        {
+          "title": "startup pitch",
+          "event_category": "PERSONAL",
+          "due_date": "2026-07-03T20:37:50-07:00",
+          "time_needed": 20
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1093,
+        "completion_tokens": 171,
+        "total_tokens": 1264
+      },
+      "reply_preview": "got it, personal task for startup pitch due Friday with 5 hours needed \u2014 i\u2019ll set it up for you",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {\n    \"title\": \"startup pitch\",\n    \"due_date_natural\": \"Friday\",\n    \"event_category\": \"PERSONAL\",\n    \"time_needed_natural\": \"5 hours\"\n  },\n  \"missing_fields\": [],\n  \"reply\": \"got it, ",
+      "error": null,
+      "latency_ms": 13882,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "event_lunch",
+      "model": "qwen/qwen3-32b",
+      "prompt": "ill be at lunch from 12:30 to 1:30",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [
+        "create_event: end is in the past"
+      ],
+      "usage": {
+        "prompt_tokens": 1022,
+        "completion_tokens": 115,
+        "total_tokens": 1137
+      },
+      "reply_preview": "got it, taking a break for lunch\n\n(I couldn't safely run that \u2014 create_event: end is in the past)",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, taking a break for lunch\",\n  \"calls\": [\n    {\n      \"function\": \"create_event\",\n      \"params\": {\n        \"name\": \"lunch\",\n        \"start_",
+      "error": null,
+      "latency_ms": 13838,
+      "score": {
+        "format_ok": true,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "validation: ['create_event: end is in the past']",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "event_commute_noon",
+      "model": "qwen/qwen3-32b",
+      "prompt": "commuting until noon",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [
+        "create_event: end is in the past"
+      ],
+      "usage": {
+        "prompt_tokens": 1046,
+        "completion_tokens": 109,
+        "total_tokens": 1155
+      },
+      "reply_preview": "got it, let me adjust your schedule for the commute\n\n(I couldn't safely run that \u2014 create_event: end is in the past)",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, let me adjust your schedule for the commute\",\n  \"calls\": [\n    {\n      \"function\": \"create_event\",\n      \"params\": {\n        \"name\": \"comm",
+      "error": null,
+      "latency_ms": 10604,
+      "score": {
+        "format_ok": true,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "validation: ['create_event: end is in the past']",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_75_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "extend by 75 mins",
+      "functions": [
+        "extend_current_gcal_block"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep",
+          "additional_minutes": 75
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1048,
+        "completion_tokens": 107,
+        "total_tokens": 1155
+      },
+      "reply_preview": "got it, extending your current block by 75 minutes",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, extending your current block by 75 minutes\",\n  \"calls\": [\n    {\n      \"function\": \"extend_current_gcal_block\",\n      \"params\": {\n        \"",
+      "error": null,
+      "latency_ms": 9565,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "extend_bcg_off_block",
+      "model": "qwen/qwen3-32b",
+      "prompt": "extend bcg by 2 hours",
+      "functions": [
+        "extend_current_gcal_block"
+      ],
+      "params": [
+        {
+          "task_query": "data infra pres",
+          "additional_minutes": 120
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1049,
+        "completion_tokens": 106,
+        "total_tokens": 1155
+      },
+      "reply_preview": "got it, extending the data infra pres by 2 hours",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, extending the data infra pres by 2 hours\",\n  \"calls\": [\n    {\n      \"function\": \"extend_current_gcal_block\",\n      \"params\": {\n        \"ad",
+      "error": null,
+      "latency_ms": 12825,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected one of ['extend_task_total', 'extend_task_instance'], got ['extend_current_gcal_block']"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_until_5pm",
+      "model": "qwen/qwen3-32b",
+      "prompt": "extend this until 5pm",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [
+        "Could not parse duration '5pm' for extend_current_gcal_block",
+        "extend_current_gcal_block: missing additional time"
+      ],
+      "usage": {
+        "prompt_tokens": 1048,
+        "completion_tokens": 101,
+        "total_tokens": 1149
+      },
+      "reply_preview": "got it, extending your active block\n\n(I couldn't safely run that \u2014 Could not parse duration '5pm' for extend_current_gcal_block; extend_current_gcal_block: miss",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, extending your active block\",\n  \"calls\": [\n    {\n      \"function\": \"extend_current_gcal_block\",\n      \"params\": {\n        \"additional_time",
+      "error": null,
+      "latency_ms": 5969,
+      "score": {
+        "format_ok": true,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "validation: [\"Could not parse duration '5pm' for extend_current_gcal_block\", 'extend_current_gcal_block: missing additional time']",
+          "expected action_required with calls"
+        ]
+      }
+    },
+    {
+      "case_id": "switch_data_infra_until_5pm",
+      "model": "qwen/qwen3-32b",
+      "prompt": "im actually working on data infra until 5pm",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": "data infra",
+          "work_until_natural": "5pm"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1052,
+        "completion_tokens": 103,
+        "total_tokens": 1155
+      },
+      "reply_preview": "got it, switching to data infra until 5pm",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, switching to data infra until 5pm\",\n  \"calls\": [\n    {\n      \"function\": \"switch_active_task\",\n      \"params\": {\n        \"new_task_query\":",
+      "error": null,
+      "latency_ms": 8882,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "switch_orgo",
+      "model": "qwen/qwen3-32b",
+      "prompt": "doing orgo instead",
+      "functions": [
+        "switch_active_task"
+      ],
+      "params": [
+        {
+          "new_task_query": "orgo",
+          "work_until_natural": "2026-07-01T21:39:00-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1046,
+        "completion_tokens": 122,
+        "total_tokens": 1168
+      },
+      "reply_preview": "got it, switching to orgo",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, switching to orgo\",\n  \"calls\": [\n    {\n      \"function\": \"switch_active_task\",\n      \"params\": {\n        \"new_task_query\": \"orgo\",\n       ",
+      "error": null,
+      "latency_ms": 9765,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "vague_ping_reply",
+      "model": "qwen/qwen3-32b",
+      "prompt": "yeah that changed",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": true,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1045,
+        "completion_tokens": 59,
+        "total_tokens": 1104
+      },
+      "reply_preview": "got it \u2014 what changed?",
+      "raw_preview": "{\n  \"action_required\": false,\n  \"clarification_required\": true,\n  \"clarification_kind\": \"disambiguate_task\",\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it \u2014 what changed?\",\n  \"calls\": []\n}",
+      "error": null,
+      "latency_ms": 8520,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "missed_bcg_tomorrow_morning",
+      "model": "qwen/qwen3-32b",
+      "prompt": "i skipped BCG move it to tomorrow morning",
+      "functions": [
+        "reschedule_task"
+      ],
+      "params": [
+        {
+          "task_query": "BCG",
+          "snooze_until": "2026-07-02T06:00:00-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1014,
+        "completion_tokens": 103,
+        "total_tokens": 1117
+      },
+      "reply_preview": "got it, moving BCG to tomorrow morning",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, moving BCG to tomorrow morning\",\n  \"calls\": [\n    {\n      \"function\": \"reschedule_task\",\n      \"params\": {\n        \"task_query\": \"BCG\",\n  ",
+      "error": null,
+      "latency_ms": 8806,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected one of ['reschedule_missed_work'], got ['reschedule_task']",
+          "forbidden function reschedule_task"
+        ]
+      }
+    },
+    {
+      "case_id": "snooze_bcg_thursday",
+      "model": "qwen/qwen3-32b",
+      "prompt": "snooze BCG until thursday",
+      "functions": [
+        "reschedule_task"
+      ],
+      "params": [
+        {
+          "task_query": "BCG",
+          "snooze_until": "2026-07-02T20:39:55-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1013,
+        "completion_tokens": 107,
+        "total_tokens": 1120
+      },
+      "reply_preview": "got it, i'll snooze the BCG task until thursday",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, i'll snooze the BCG task until thursday\",\n  \"calls\": [\n    {\n      \"function\": \"reschedule_task\",\n      \"params\": {\n        \"task_query\": ",
+      "error": null,
+      "latency_ms": 9836,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "amend_due_thursday",
+      "model": "qwen/qwen3-32b",
+      "prompt": "actually make that due thursday",
+      "functions": [
+        "move_due_date"
+      ],
+      "params": [
+        {
+          "task_query": "startup pitch",
+          "due_date": "2026-07-02T20:40:07-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1100,
+        "completion_tokens": 101,
+        "total_tokens": 1201
+      },
+      "reply_preview": "got it, moving the due date to thursday",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, moving the due date to thursday\",\n  \"calls\": [\n    {\n      \"function\": \"move_due_date\",\n      \"params\": {\n        \"task_query\": \"startup p",
+      "error": null,
+      "latency_ms": 9835,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "expected one of ['update_task', 'reschedule_task'], got ['move_due_date']"
+        ]
+      }
+    },
+    {
+      "case_id": "complete_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "complete BCG prep",
+      "functions": [
+        "complete_task"
+      ],
+      "params": [
+        {
+          "task_query": "BCG prep"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1009,
+        "completion_tokens": 77,
+        "total_tokens": 1086
+      },
+      "reply_preview": "got it, marking that as done for you",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, marking that as done for you\",\n  \"calls\": [{\"function\": \"complete_task\", \"params\": {\"task_query\": \"BCG prep\"}}]\n}",
+      "error": null,
+      "latency_ms": 8710,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "move_due_date_only",
+      "model": "qwen/qwen3-32b",
+      "prompt": "push BCG's due date to next Monday, nothing else about it changes",
+      "functions": [
+        "move_due_date"
+      ],
+      "params": [
+        {
+          "task_query": "BCG",
+          "due_date": "2026-07-06T09:00:00-07:00"
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1020,
+        "completion_tokens": 103,
+        "total_tokens": 1123
+      },
+      "reply_preview": "got it, pushing BCG's due date to next Monday",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, pushing BCG's due date to next Monday\",\n  \"calls\": [\n    {\n      \"function\": \"move_due_date\",\n      \"params\": {\n        \"task_query\": \"BCG",
+      "error": null,
+      "latency_ms": 8703,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "im_tired",
+      "model": "qwen/qwen3-32b",
+      "prompt": "im tired",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1007,
+        "completion_tokens": 60,
+        "total_tokens": 1067
+      },
+      "reply_preview": "take a break and rest up, i've got you",
+      "raw_preview": "{\n  \"action_required\": false,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"take a break and rest up, i've got you\",\n  \"calls\": []\n}",
+      "error": null,
+      "latency_ms": 8659,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "clear_evening",
+      "model": "qwen/qwen3-32b",
+      "prompt": "clear my evening",
+      "functions": [
+        "extend_current_gcal_block"
+      ],
+      "params": [
+        {
+          "task_query": null,
+          "additional_minutes": 79
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1008,
+        "completion_tokens": 87,
+        "total_tokens": 1095
+      },
+      "reply_preview": "got it, clearing your evening",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, clearing your evening\",\n  \"calls\": [{\"function\": \"extend_current_gcal_block\", \"params\": {\"additional_time_natural\": \"until 10pm\", \"task_qu",
+      "error": null,
+      "latency_ms": 8747,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "reply_only expected, got calls ['extend_current_gcal_block']"
+        ]
+      }
+    },
+    {
+      "case_id": "extend_15min_ping",
+      "model": "qwen/qwen3-32b",
+      "prompt": "give me 15 more minutes",
+      "functions": [
+        "extend_current_gcal_block"
+      ],
+      "params": [
+        {
+          "additional_minutes": 15
+        }
+      ],
+      "action_required": true,
+      "clarification_required": false,
+      "validation_errors": [],
+      "usage": {
+        "prompt_tokens": 1049,
+        "completion_tokens": 98,
+        "total_tokens": 1147
+      },
+      "reply_preview": "sure thing, adding 15 more minutes to your current block",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"sure thing, adding 15 more minutes to your current block\",\n  \"calls\": [\n    {\n      \"function\": \"extend_current_gcal_block\",\n      \"params\": {\n   ",
+      "error": null,
+      "latency_ms": 8684,
+      "score": {
+        "format_ok": true,
+        "validation_ok": true,
+        "intent_ok": true,
+        "params_ok": true,
+        "overall": true,
+        "reasons": []
+      }
+    },
+    {
+      "case_id": "log_work_bcg",
+      "model": "qwen/qwen3-32b",
+      "prompt": "log 30 minutes on bcg prep",
+      "functions": [],
+      "params": [],
+      "action_required": false,
+      "clarification_required": false,
+      "validation_errors": [
+        "log_work: end is in the past"
+      ],
+      "usage": {
+        "prompt_tokens": 1014,
+        "completion_tokens": 113,
+        "total_tokens": 1127
+      },
+      "reply_preview": "got it, logging 30 minutes on bcg prep\n\n(I couldn't safely run that \u2014 log_work: end is in the past)",
+      "raw_preview": "{\n  \"action_required\": true,\n  \"clarification_required\": false,\n  \"clarification_kind\": null,\n  \"pending_params\": {},\n  \"missing_fields\": [],\n  \"reply\": \"got it, logging 30 minutes on bcg prep\",\n  \"calls\": [\n    {\n      \"function\": \"log_work\",\n      \"params\": {\n        \"task_query\": \"bcg prep\",\n    ",
+      "error": null,
+      "latency_ms": 8533,
+      "score": {
+        "format_ok": true,
+        "validation_ok": false,
+        "intent_ok": false,
+        "params_ok": true,
+        "overall": false,
+        "reasons": [
+          "validation: ['log_work: end is in the past']",
+          "expected action_required with calls"
+        ]
+      }
+    }
+  ],
+  "totals_by_model": {
+    "qwen/qwen3-32b": {
+      "passed": 15,
+      "total": 27,
+      "tokens": 30730
+    }
+  }
+}

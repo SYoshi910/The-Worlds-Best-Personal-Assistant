@@ -12,12 +12,20 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
-import google.generativeai as genai
+try:
+    from google import genai
+    from google.genai import types
+except ImportError as exc:
+    raise ImportError(
+        "google-genai is not installed in this Python environment. "
+        "Run: venv\\Scripts\\pip install google-genai"
+    ) from exc
 from groq import APIStatusError, AsyncGroq, RateLimitError
 
 from config import (
     GEMINI_TOKEN,
     GOOGLE_CHAT_MODEL,
+    GOOGLE_VISION_MODEL,
     GROQ_TOKEN,
     MODEL_QUOTA_THRESHOLD,
     MODEL_USAGE_PATH,
@@ -43,11 +51,18 @@ class ModelLimits:
 
 
 @dataclass(frozen=True)
+class GoogleGenConfig:
+    thinking_level: types.ThinkingLevel = types.ThinkingLevel.MINIMAL
+    response_json: bool = True
+
+
+@dataclass(frozen=True)
 class ModelSpec:
     id: str
     display_name: str
     provider: Provider
     limits: ModelLimits
+    google_config: GoogleGenConfig | None = None
 
 
 @dataclass
@@ -106,6 +121,7 @@ MODEL_CHAIN: list[ModelSpec] = [
         "Gemma (Google)",
         Provider.GOOGLE,
         ModelLimits(tpd=1_000_000, tpm=8_000, rpd=1_500, rpm=15),
+        google_config=GoogleGenConfig(),
     ),
     ModelSpec(
         "llama-3.3-70b-versatile",
@@ -134,7 +150,72 @@ MODEL_CHAIN: list[ModelSpec] = [
 ]
 
 _groq_client = AsyncGroq(api_key=GROQ_TOKEN)
+_google_client: genai.Client | None = None
 _id_to_spec = {m.id: m for m in MODEL_CHAIN}
+
+_GOOGLE_JSON_SUFFIX = (
+    "\n\nYou are a JSON API. Respond with a single JSON object only. "
+    "No markdown, no backticks, no reasoning, no preamble."
+)
+
+
+def _get_google_client() -> genai.Client:
+    global _google_client
+    if _google_client is None:
+        _google_client = genai.Client(api_key=GEMINI_TOKEN)
+    return _google_client
+
+
+def _is_gemma4_model(model_id: str) -> bool:
+    return model_id.lower().startswith("gemma-4")
+
+
+def _google_gen_config(spec: ModelSpec) -> GoogleGenConfig:
+    if spec.google_config is not None:
+        return spec.google_config
+    if _is_gemma4_model(spec.id):
+        return GoogleGenConfig()
+    return GoogleGenConfig(response_json=True)
+
+
+def _google_system_instruction(messages: list[dict]) -> str | None:
+    parts = [m.get("content", "") for m in messages if m.get("role") == "system"]
+    base = "\n\n".join(parts)
+    combined = (base + _GOOGLE_JSON_SUFFIX).strip()
+    return combined or None
+
+
+def _google_contents(messages: list[dict]) -> list[types.Content]:
+    contents: list[types.Content] = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        if role == "system":
+            continue
+        content = msg.get("content", "")
+        gemini_role = "model" if role == "assistant" else "user"
+        contents.append(
+            types.Content(
+                role=gemini_role,
+                parts=[types.Part.from_text(text=content)],
+            )
+        )
+    return contents
+
+
+def _google_answer_text(response) -> str:
+    """Return model answer text, skipping Gemma thought-channel parts."""
+    parts: list[str] = []
+    for candidate in getattr(response, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        if not content:
+            continue
+        for part in getattr(content, "parts", None) or []:
+            if getattr(part, "thought", False):
+                continue
+            text = getattr(part, "text", None)
+            if text:
+                parts.append(text)
+    return "\n".join(parts).strip()
 
 
 def set_switch_notifier(fn: NotifyFn | None) -> None:
@@ -416,34 +497,33 @@ async def _google_complete(
     max_tokens: int,
     temperature: float,
 ) -> tuple[str, int, int, int]:
-    genai.configure(api_key=GEMINI_TOKEN)
-    system_parts: list[str] = []
-    convo_parts: list[str] = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role == "system":
-            system_parts.append(content)
-        else:
-            convo_parts.append(f"{role.upper()}:\n{content}")
-    prompt_text = "\n\n".join(convo_parts)
-    system_instruction = "\n\n".join(system_parts) if system_parts else None
+    gcfg = _google_gen_config(spec)
+    config_kwargs: dict = {
+        "max_output_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    system_instruction = _google_system_instruction(messages)
+    if system_instruction:
+        config_kwargs["system_instruction"] = system_instruction
+    if gcfg.response_json:
+        config_kwargs["response_mime_type"] = "application/json"
+    if _is_gemma4_model(spec.id):
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            thinking_level=gcfg.thinking_level,
+        )
+    config = types.GenerateContentConfig(**config_kwargs)
+    contents = _google_contents(messages)
+    client = _get_google_client()
 
     def _run():
-        model = genai.GenerativeModel(
-            spec.id,
-            system_instruction=system_instruction,
-        )
-        return model.generate_content(
-            prompt_text,
-            generation_config={
-                "max_output_tokens": max_tokens,
-                "temperature": temperature,
-            },
+        return client.models.generate_content(
+            model=spec.id,
+            contents=contents,
+            config=config,
         )
 
     response = await asyncio.to_thread(_run)
-    raw = (response.text or "").strip()
+    raw = _google_answer_text(response)
     meta = getattr(response, "usage_metadata", None)
     prompt = int(getattr(meta, "prompt_token_count", 0) or 0)
     completion = int(getattr(meta, "candidates_token_count", 0) or 0)
@@ -573,4 +653,103 @@ async def complete_chat(
         )
     raise AllModelsExhausted(
         "All models are rate-limited right now — try again shortly."
+    )
+
+
+def _vision_spec(model_id: str | None = None) -> ModelSpec:
+    mid = model_id or GOOGLE_VISION_MODEL
+    return ModelSpec(
+        mid,
+        "Gemma Vision",
+        Provider.GOOGLE,
+        ModelLimits(tpd=1_000_000, tpm=8_000, rpd=1_500, rpm=15),
+        google_config=GoogleGenConfig(response_json=False),
+    )
+
+
+async def complete_google_vision(
+    image_bytes: bytes,
+    mime_type: str,
+    prompt: str,
+    *,
+    model_id: str | None = None,
+    max_tokens: int = 512,
+    temperature: float = 0.2,
+) -> CompletionResult:
+    """Google-only vision completion with quota tracking (no Groq failover)."""
+    global _ledger
+    spec = _vision_spec(model_id)
+    now = _la_now()
+    _ledger.rollover_if_needed(now)
+    path = Path(MODEL_USAGE_PATH)
+
+    if _ledger.is_exhausted(spec, now):
+        raise AllModelsExhausted(
+            "Vision model is at capacity right now — try again in a few minutes."
+        )
+
+    config_kwargs: dict = {
+        "max_output_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if _is_gemma4_model(spec.id):
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            thinking_level=types.ThinkingLevel.MINIMAL,
+        )
+    config = types.GenerateContentConfig(**config_kwargs)
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                types.Part.from_text(text=prompt),
+            ],
+        )
+    ]
+    client = _get_google_client()
+
+    def _run():
+        return client.models.generate_content(
+            model=spec.id,
+            contents=contents,
+            config=config,
+        )
+
+    try:
+        response = await asyncio.to_thread(_run)
+    except Exception as e:
+        if not _is_rate_limit_error(e):
+            raise
+        err_text = str(e)
+        fail_reason = _parse_limit_reason(err_text)
+        retry_sec = _parse_retry_after_seconds(err_text)
+        _ledger.mark_exhausted(
+            spec, fail_reason, now=now, retry_after_sec=retry_sec
+        )
+        _ledger.save(path)
+        raise AllModelsExhausted(
+            "Vision model is rate-limited right now — try again shortly."
+        ) from e
+
+    raw = _google_answer_text(response)
+    meta = getattr(response, "usage_metadata", None)
+    prompt_tok = int(getattr(meta, "prompt_token_count", 0) or 0)
+    completion_tok = int(getattr(meta, "candidates_token_count", 0) or 0)
+    total = int(getattr(meta, "total_token_count", 0) or 0) or (
+        prompt_tok + completion_tok
+    )
+
+    _ledger.record(spec.id, prompt_tok, completion_tok)
+    proactive = _ledger.check_proactive_thresholds(spec)
+    if proactive:
+        print(f"⚠️ {spec.display_name} crossed 95% {proactive} quota")
+    _ledger.save(path)
+
+    return CompletionResult(
+        raw=raw,
+        model_id=spec.id,
+        display_name=spec.display_name,
+        prompt_tokens=prompt_tok,
+        completion_tokens=completion_tok,
+        total_tokens=total,
     )

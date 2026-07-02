@@ -14,12 +14,20 @@ import reclaim
 import schedule_cache
 from cal_helper import get_task_by_query
 from config import TIMEZONE
-from inference import parse_upcoming_time
+from config import now_local as _now
+from inference import parse_to_iso
+from queries import format_clock
 from reclaim import (
     _parse_event_time,
+    find_missed_blocks_in_window,
     find_missed_task_blocks,
+    get_all_events,
     plan_work,
+    resolve_snooze_target,
+    reschedule_missed_event,
     snooze_task,
+    task_ids_with_missed_blocks,
+    task_ids_with_missed_blocks_today,
 )
 
 
@@ -29,10 +37,6 @@ def _ok(summary: str, snapshots: list | None = None, **extra) -> dict:
 
 def _fail(msg: str, **extra) -> dict:
     return {"ok": False, "failed": [msg], "snapshots": [], **extra}
-
-
-def _now() -> datetime:
-    return datetime.now(ZoneInfo(TIMEZONE))
 
 
 def _duration_minutes(
@@ -47,7 +51,7 @@ def _duration_minutes(
         except (TypeError, ValueError):
             pass
     if work_until_natural:
-        iso = parse_upcoming_time(work_until_natural, now)
+        iso = parse_to_iso(work_until_natural, now)
         if iso:
             end = datetime.fromisoformat(iso)
             if end.tzinfo is None:
@@ -94,110 +98,129 @@ def _compute_new_times(
     return target, target + duration
 
 
+def _dedupe_events(blocks: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for event in blocks:
+        eid = event.get("eventId")
+        if not eid or eid in seen:
+            continue
+        seen.add(eid)
+        out.append(event)
+    return out
+
+
+async def _blocks_for_scope(
+    *,
+    task_query: str | None,
+    task_queries: list[str] | None,
+    all_missed_today: bool,
+    overlap_since_minutes: int | None,
+    period: str = "today",
+) -> tuple[list[dict], str | None]:
+    """Resolve missed blocks; return (blocks, error_message)."""
+    events = await get_all_events()
+    now = _now()
+    scope = "week" if period == "week" else "today"
+
+    if overlap_since_minutes:
+        win_start = now - timedelta(minutes=int(overlap_since_minutes))
+        return _dedupe_events(
+            await find_missed_blocks_in_window(win_start, now, events=events)
+        ), None
+
+    if all_missed_today:
+        blocks: list[dict] = []
+        for tid in await task_ids_with_missed_blocks(events=events, period=scope):
+            blocks.extend(
+                await find_missed_task_blocks(tid, events=events, period=scope)
+            )
+        return _dedupe_events(blocks), None
+
+    queries: list[str] = []
+    if task_query:
+        queries.append(task_query)
+    if task_queries:
+        queries.extend(task_queries)
+    queries = list(dict.fromkeys(q for q in queries if q))
+    if not queries:
+        return [], "No task specified for missed-work reschedule"
+
+    blocks = []
+    for query in queries:
+        task = await get_task_by_query(query)
+        if not task:
+            return [], f"Could not find a task matching '{query}'"
+        blocks.extend(
+            await find_missed_task_blocks(task["id"], events=events, period=scope)
+        )
+    return _dedupe_events(blocks), None
+
+
 async def reschedule_missed_work(
-    task_query: str,
+    task_query: str | None = None,
+    task_queries: list[str] | None = None,
+    all_missed_today: bool = False,
     snooze_until_natural: str | None = None,
+    overlap_since_minutes: int | None = None,
+    period: str = "today",
     current_task: dict | None = None,
 ) -> dict:
-    """Move today's missed task blocks to a target time (default now + 1 hour)."""
-    task = await get_task_by_query(task_query)
-    if not task:
-        return _fail(f"Could not find a task matching '{task_query}'")
-
-    blocks = await find_missed_task_blocks(task["id"])
+    """Reschedule missed task block(s) via the Reclaim planner."""
+    blocks, err = await _blocks_for_scope(
+        task_query=task_query,
+        task_queries=task_queries,
+        all_missed_today=all_missed_today,
+        overlap_since_minutes=overlap_since_minutes,
+        period=period,
+    )
+    if err:
+        return _fail(err)
     if not blocks:
-        return _fail(f"No missed blocks today for '{task.get('title')}'")
+        return _fail("No missed blocks to reschedule")
 
     now = _now()
-    target = None
-    if snooze_until_natural:
-        iso = parse_upcoming_time(snooze_until_natural, now)
-        if iso:
-            target = datetime.fromisoformat(iso)
-
-    snapshots = []
-    moved = []
-    errors = []
+    target, snooze_option = resolve_snooze_target(snooze_until_natural, now)
+    snapshots: list[dict] = []
+    moved: list[str] = []
+    errors: list[str] = []
 
     for event in blocks:
-        event_id = event["eventId"]
-        start = _parse_event_time(event["eventStart"])
-        end = _parse_event_time(event["eventEnd"])
-        new_start, new_end = _compute_new_times(start, end, target)
+        snapshots.append(
+            {
+                "type": "move_task_event",
+                "event_id": event["eventId"],
+                "calendar_id": event.get("calendarId"),
+                "start": event.get("eventStart"),
+                "end": event.get("eventEnd"),
+            }
+        )
         try:
-            _updated, snap = await gcal.move_event(event_id, new_start, new_end)
-            snapshots.append(snap)
-            moved.append(event.get("title", event_id))
+            if await reschedule_missed_event(event, target, snooze_option):
+                moved.append(event.get("title") or event["eventId"])
+            else:
+                errors.append(f"Failed to reschedule {event.get('title', 'block')}")
         except Exception as e:
-            errors.append(f"Failed to move {event.get('title')}: {e}")
+            errors.append(f"{event.get('title', 'block')}: {e}")
 
     if not moved:
         return _fail("; ".join(errors) if errors else "No blocks moved")
 
-    when = "+1 hour" if target is None else target.strftime("%a %I:%M %p")
-    summary = (
-        f"I've moved {len(moved)} missed block(s) for '{task.get('title')}' to {when}"
+    when = (
+        target.strftime("%a %I:%M %p")
+        if target
+        else (snooze_until_natural or "+1 hour")
     )
-    result = _ok(summary, snapshots=snapshots, moved_count=len(moved))
+    span = "this week" if period == "week" else "today"
+    n = len(moved)
+    summary = (
+        f"I've rescheduled {n} missed block{'s' if n != 1 else ''} "
+        f"from {span} to {when}"
+    )
+    result = _ok(summary, snapshots=snapshots, moved_count=n)
     if errors:
         result["failed"] = errors
     return result
-
-
-async def reschedule_multiple_missed_work(
-    task_queries: list[str] | None = None,
-    snooze_until_natural: str | None = None,
-    all_missed_today: bool = False,
-    current_task: dict | None = None,
-) -> dict:
-    """Reschedule missed blocks for multiple tasks (one ``reschedule_missed_work`` each).
-
-  ``all_missed_today=True``: discover every task with missed blocks today (e.g.
-  "I didn't work on anything today"). The LLM may also emit several
-  ``reschedule_missed_work`` calls in one turn instead of using this composite.
-    """
-    queries_to_run: list[str] = list(task_queries or [])
-
-    if all_missed_today:
-        task_ids = await reclaim.task_ids_with_missed_blocks_today()
-        for tid in task_ids:
-            task = await reclaim.get_task(tid)
-            if task and task.get("title"):
-                title = task["title"]
-                if title not in queries_to_run:
-                    queries_to_run.append(title)
-
-    if not queries_to_run:
-        return _fail("No missed tasks found to reschedule")
-
-    summaries = []
-    snapshots = []
-    failed = []
-    moved_total = 0
-
-    for query in queries_to_run:
-        result = await reschedule_missed_work(
-            query,
-            snooze_until_natural=snooze_until_natural,
-            current_task=current_task,
-        )
-        if result.get("ok"):
-            summaries.append(result.get("summary", query))
-            snapshots.extend(result.get("snapshots", []))
-            moved_total += result.get("moved_count", 0)
-        else:
-            failed.extend(result.get("failed", [f"Failed for '{query}'"]))
-
-    if not summaries:
-        return _fail("; ".join(failed) if failed else "No blocks moved")
-
-    summary = f"Rescheduled missed work for {len(summaries)} task(s): " + "; ".join(
-        summaries
-    )
-    out = _ok(summary, snapshots=snapshots, moved_count=moved_total)
-    if failed:
-        out["failed"] = failed
-    return out
 
 
 async def switch_active_task(
@@ -303,7 +326,7 @@ async def extend_current_gcal_block(
         )
         return _ok(
             f"I've added a {additional_minutes}-min buffer until "
-            f"{end_time.strftime('%I:%M %p').lstrip('0')}",
+            f"{format_clock(end_time)}",
             snapshots=[snap],
         )
     except Exception as e:
